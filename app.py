@@ -11,6 +11,9 @@ app = Flask(__name__)
 @app.route("/")
 def home():
     return "Kerykeion API is running"
+    @app.route("/")
+def home():
+    return "Kerykeion API is running"
 
 
 @app.route("/test")

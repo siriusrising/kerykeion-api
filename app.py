@@ -1,4 +1,4 @@
-from flask import Flask, send_file
+from flask import Flask, Response
 
 from pathlib import Path
 from kerykeion import AstrologicalSubjectFactory

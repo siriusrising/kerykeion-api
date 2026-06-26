@@ -16,18 +16,13 @@ def home():
 @app.route("/test")
 def test_chart():
 
-    subject = AstrologicalSubjectFactory.from_birth_data(
-        "John Lennon",
-        1940,
-        10,
-        9,
-        18,
-        30,
-        lng=-2.9779,
-        lat=53.4084,
-        tz_str="Europe/London",
-        online=False,
-    )
+/chart?year=1957
+      &month=1
+      &day=20
+      &hour=9
+      &minute=0
+      &city=Lennoxtown
+      &country=United Kingdom
 
     chart_data = ChartDataFactory.create_natal_chart_data(subject)
 

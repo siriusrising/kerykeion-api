@@ -1,4 +1,4 @@
-from flask import Flask, Response
+from flask import Flask, send_file
 
 from pathlib import Path
 from kerykeion import AstrologicalSubjectFactory
@@ -41,12 +41,10 @@ def test_chart():
         filename="test-chart"
     )
 
-   from flask import send_file
-
-return send_file(
-    "charts/test-chart.svg",
-    mimetype="image/svg+xml"
-)
+    return send_file(
+        "charts/test-chart.svg",
+        mimetype="image/svg+xml"
+    )
 
 
 if __name__ == "__main__":

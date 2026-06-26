@@ -11,9 +11,29 @@ app = Flask(__name__)
 @app.route("/")
 def home():
     return "Kerykeion API is running"
-    @app.route("/")
-def home():
-    return "Kerykeion API is running"
+
+
+@app.route("/chart")
+def chart():
+
+    year = request.args.get("year", type=int)
+    month = request.args.get("month", type=int)
+    day = request.args.get("day", type=int)
+    hour = request.args.get("hour", type=int)
+    minute = request.args.get("minute", type=int)
+
+    city = request.args.get("city")
+    country = request.args.get("country")
+
+    return {
+        "year": year,
+        "month": month,
+        "day": day,
+        "hour": hour,
+        "minute": minute,
+        "city": city,
+        "country": country
+    }
 
 
 @app.route("/test")

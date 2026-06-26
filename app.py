@@ -38,10 +38,10 @@ def chart():
 
 @app.route("/version")
 def version():
-    import kerykeion
+    import importlib.metadata
 
     return {
-        "version": kerykeion.__version__
+        "version": importlib.metadata.version("kerykeion")
     }
 
 

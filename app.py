@@ -16,13 +16,18 @@ def home():
 @app.route("/test")
 def test_chart():
 
-/chart?year=1957
-      &month=1
-      &day=20
-      &hour=9
-      &minute=0
-      &city=Lennoxtown
-      &country=United Kingdom
+    subject = AstrologicalSubjectFactory.from_birth_data(
+        "Sirius Rising",
+        1957,
+        1,
+        20,
+        9,
+        0,
+        lng=-4.1992427,
+        lat=55.9731494,
+        tz_str="Europe/London",
+        online=False,
+    )
 
     chart_data = ChartDataFactory.create_natal_chart_data(subject)
 

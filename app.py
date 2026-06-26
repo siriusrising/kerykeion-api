@@ -41,7 +41,12 @@ def test_chart():
         filename="test-chart"
     )
 
-    return "SVG created successfully"
+   from flask import send_file
+
+return send_file(
+    "charts/test-chart.svg",
+    mimetype="image/svg+xml"
+)
 
 
 if __name__ == "__main__":

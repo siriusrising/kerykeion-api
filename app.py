@@ -36,6 +36,15 @@ def chart():
     }
 
 
+@app.route("/version")
+def version():
+    import kerykeion
+
+    return {
+        "version": kerykeion.__version__
+    }
+
+
 @app.route("/test")
 def test_chart():
 

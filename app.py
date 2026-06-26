@@ -1,0 +1,48 @@
+from flask import Flask
+
+from pathlib import Path
+from kerykeion import AstrologicalSubjectFactory
+from kerykeion.chart_data_factory import ChartDataFactory
+from kerykeion.charts.chart_drawer import ChartDrawer
+
+app = Flask(__name__)
+
+
+@app.route("/")
+def home():
+    return "Kerykeion API is running"
+
+
+@app.route("/test")
+def test_chart():
+
+    subject = AstrologicalSubjectFactory.from_birth_data(
+        "John Lennon",
+        1940,
+        10,
+        9,
+        18,
+        30,
+        lng=-2.9779,
+        lat=53.4084,
+        tz_str="Europe/London",
+        online=False,
+    )
+
+    chart_data = ChartDataFactory.create_natal_chart_data(subject)
+
+    drawer = ChartDrawer(chart_data=chart_data)
+
+    out_dir = Path("charts")
+    out_dir.mkdir(exist_ok=True)
+
+    drawer.save_svg(
+        output_path=out_dir,
+        filename="test-chart"
+    )
+
+    return "SVG created successfully"
+
+
+if __name__ == "__main__":
+    app.run(debug=True)

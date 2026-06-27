@@ -114,8 +114,9 @@ def chart_page():
         hour = int(request.args.get("hour",12))
         minute = int(request.args.get("minute",0))
 
-        city = request.args["city"]
-        country = request.args["country"]
+       city = request.args["city"]
+country = request.args["country"]
+name = request.args.get("name", "Birth Chart")
 
         subject = AstrologicalSubjectFactory.from_birth_data(
             name="Chart",

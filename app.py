@@ -49,17 +49,17 @@ def version():
 def test_chart():
 
     subject = AstrologicalSubjectFactory.from_birth_data(
-        "Sirius Rising",
-        1957,
-        1,
-        20,
-        9,
-        0,
-        lng=-4.1992427,
-        lat=55.9731494,
-        tz_str="Europe/London",
-        online=False,
-    )
+    name="Visitor",
+    year=year,
+    month=month,
+    day=day,
+    hour=hour,
+    minute=minute,
+    city=city,
+    nation=country,
+    geonames_username="siriusrising",
+    online=True,
+)
 
     chart_data = ChartDataFactory.create_natal_chart_data(subject)
 

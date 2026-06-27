@@ -1,153 +1,129 @@
-import io
 import os
 import logging
-from pathlib import Path
 
 from flask import Flask, request, Response, jsonify
 from kerykeion import AstrologicalSubjectFactory
 from kerykeion.chart_data_factory import ChartDataFactory
 from kerykeion.charts.chart_drawer import ChartDrawer
 
-# ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# GeoNames username – set as an environment variable on Render for safety,
-# but fall back to the hard-coded value if you prefer.
-GEONAMES_USERNAME = os.environ.get("GEONAMES_USERNAME", "siriusrising")
+GEONAMES_USERNAME = os.environ.get(
+    "GEONAMES_USERNAME",
+    "siriusrising"
+)
 
 
-# ── / ──────────────────────────────────────────────────────────────────────────
 @app.route("/")
-def index():
+def home():
     return "Kerykeion API is running"
 
 
-# ── /test ───────────────────────────────────────────────────────────────────────
-# Known-good diagnostic endpoint.  DO NOT MODIFY.
 @app.route("/test")
 def test():
-    """Hard-coded chart for 20 Jan 1957 09:00 GMT, Lennoxtown, Scotland."""
+
     subject = AstrologicalSubjectFactory.from_birth_data(
-        name="Test Subject",
+        name="Test",
         year=1957,
         month=1,
         day=20,
         hour=9,
         minute=0,
-        lng=-4.1974,   # Lennoxtown, Scotland
+        lng=-4.1974,
         lat=55.9742,
         tz_str="Europe/London",
         online=False,
     )
+
     chart_data = ChartDataFactory.create_natal_chart_data(subject)
     drawer = ChartDrawer(chart_data=chart_data)
-    svg_string = drawer.generate_svg_string()
-    return Response(svg_string, mimetype="image/svg+xml")
+
+    return Response(
+        drawer.generate_svg_string(),
+        mimetype="image/svg+xml"
+    )
 
 
-# ── /chart ──────────────────────────────────────────────────────────────────────
-@app.route("/chart")
-def chart():
-    """
-    Generate a natal chart SVG from birth data supplied as query parameters.
+@app.route("/chart-page")
+def chart_page():
 
-    Required parameters
-    -------------------
-    year    : int   e.g. 1990
-    month   : int   e.g. 6
-    day     : int   e.g=15
-    hour    : int   e.g. 14   (24-hour clock, local birth time)
-    minute  : int   e.g. 30
-    city    : str   e.g. London
-    country : str   ISO 3166-1 alpha-2 code, e.g. GB
-
-    Optional parameters
-    -------------------
-    name    : str   Defaults to "Chart"
-
-    Example
-    -------
-    /chart?year=1957&month=1&day=20&hour=9&minute=0&city=Lennoxtown&country=GB
-    """
-    # ── Parse & validate parameters ────────────────────────────────────────────
-    errors = []
-
-    def get_int(param):
-        raw = request.args.get(param)
-        if raw is None:
-            errors.append(f"Missing required parameter: {param}")
-            return None
-        try:
-            return int(raw)
-        except ValueError:
-            errors.append(f"Parameter '{param}' must be an integer, got: {raw!r}")
-            return None
-
-    year   = get_int("year")
-    month  = get_int("month")
-    day    = get_int("day")
-    hour   = get_int("hour")
-    minute = get_int("minute")
-
-    city    = request.args.get("city",    "").strip()
-    country = request.args.get("country", "").strip()
-    name    = request.args.get("name",    "Chart").strip()
-
-    if not city:
-        errors.append("Missing required parameter: city")
-    if not country:
-        errors.append("Missing required parameter: country")
-
-    if errors:
-        return jsonify({"error": "Invalid parameters", "details": errors}), 400
-
-    # ── Build the astrological subject via GeoNames online lookup ──────────────
     try:
-        logger.info(
-            "Generating chart for %s – %04d-%02d-%02d %02d:%02d  %s, %s",
-            name, year, month, day, hour, minute, city, country,
-        )
+
+        year = int(request.args["year"])
+        month = int(request.args["month"])
+        day = int(request.args["day"])
+        hour = int(request.args.get("hour",12))
+        minute = int(request.args.get("minute",0))
+
+        city = request.args["city"]
+        country = request.args["country"]
 
         subject = AstrologicalSubjectFactory.from_birth_data(
-            name=name,
+            name="Chart",
             year=year,
             month=month,
             day=day,
             hour=hour,
             minute=minute,
             city=city,
-            nation=country,                     # Kerykeion uses 'nation'
+            nation=country,
             geonames_username=GEONAMES_USERNAME,
-            online=True,                        # Trigger GeoNames lookup
+            online=True
         )
 
-    except Exception as exc:
-        logger.exception("GeoNames / subject creation failed")
-        return jsonify({
-            "error": "Could not resolve location or create astrological subject.",
-            "detail": str(exc),
-        }), 500
-
-    # ── Calculate chart data & render SVG ──────────────────────────────────────
-    try:
         chart_data = ChartDataFactory.create_natal_chart_data(subject)
         drawer = ChartDrawer(chart_data=chart_data)
-        svg_string = drawer.generate_svg_string()
 
-    except Exception as exc:
-        logger.exception("Chart generation failed")
+        svg = drawer.generate_svg_string()
+
+        html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta charset="utf-8">
+
+<style>
+
+html,body{{
+margin:0;
+padding:0;
+background:white;
+}}
+
+svg{{
+display:block;
+width:100%;
+height:auto;
+}}
+
+</style>
+
+</head>
+
+<body>
+
+{svg}
+
+</body>
+
+</html>
+"""
+
+        return Response(html,mimetype="text/html")
+
+    except Exception as e:
+
+        logger.exception(e)
+
         return jsonify({
-            "error": "Chart generation failed.",
-            "detail": str(exc),
-        }), 500
-
-    # ── Return the SVG directly ────────────────────────────────────────────────
-    return Response(svg_string, mimetype="image/svg+xml")
+            "error":"Chart generation failed",
+            "detail":str(e)
+        }),500
 
 
-# ── Entry point (local dev only – Render uses Gunicorn) ────────────────────────
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True)

@@ -144,19 +144,19 @@ def chart_page():
 
 <style>
 
-html,body{
+html,body{{
     margin:0;
     padding:0;
     width:100%;
     height:100%;
     overflow-x:hidden;
     background:white;
-}
+}}
 
 svg{{
-display:block;
-width:100%;
-height:auto;
+    display:block;
+    width:100%;
+    height:auto;
 }}
 
 </style>

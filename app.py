@@ -119,7 +119,7 @@ country = request.args["country"]
 name = request.args.get("name", "Birth Chart")
 
         subject = AstrologicalSubjectFactory.from_birth_data(
-            name="Chart",
+            name=name,
             year=year,
             month=month,
             day=day,

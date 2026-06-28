@@ -13,7 +13,27 @@ GEONAMES_USERNAME = os.environ.get("GEONAMES_USERNAME", "siriusrising")
 
 @app.route("/")
 def index():
-    return "Kerykeion API is running"
+    return """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body { margin:0; display:flex; justify-content:center; align-items:center; height:100vh; background:#f7f4ec; font-family:Georgia,serif; }
+.container { text-align:center; }
+.hourglass { font-size:100px; animation:spin 2.5s linear infinite; display:inline-block; }
+h1 { color:#1b355d; margin-top:20px; font-weight:normal; }
+p { color:#666; }
+@keyframes spin { from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="hourglass">⏳</div>
+  <h1>Your Chart is Ready to Generate</h1>
+  <p>Enter your birth details above and click Generate</p>
+</div>
+</body>
+</html>"""
 
 @app.route("/test")
 def test():

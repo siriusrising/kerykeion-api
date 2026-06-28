@@ -117,6 +117,7 @@ def chart_page():
        city = request.args["city"]
 country = request.args["country"]
 name = request.args.get("name", "Birth Chart")
+print("NAME RECEIVED =", name)
 
         subject = AstrologicalSubjectFactory.from_birth_data(
             name=name,

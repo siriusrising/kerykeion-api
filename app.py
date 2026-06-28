@@ -154,6 +154,41 @@ html,body{{
     overflow-x:hidden;
     background:white;
 }}
+html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta charset="utf-8">
+
+<style>
+
+html,body{{
+    margin:0;
+    padding:0;
+    width:100%;
+    height:100%;
+    overflow-x:hidden;
+    background:white;
+}}
+
+h1{{
+    text-align:center;
+    font-family:Georgia, serif;
+    font-size:56px;
+    color:#3c1b59;
+    margin:30px 0 0 0;
+    font-weight:normal;
+}}
+
+h2{{
+    text-align:center;
+    font-family:Georgia, serif;
+    font-size:30px;
+    color:#3c1b59;
+    margin:0 0 20px 0;
+    font-weight:normal;
+}}
 
 svg{{
     display:block;
@@ -167,7 +202,35 @@ svg{{
 
 <body>
 
+<h1>{name}</h1>
+<h2>Birth Chart</h2>
+
 {svg}
+
+</body>
+
+</html>
+"""
+svg{{
+    display:block;
+    width:100%;
+    height:auto;
+}}
+
+</style>
+
+</head>
+
+<body>
+
+<body>
+
+<h1>{name}</h1>
+<h2>Birth Chart</h2>
+
+{svg}
+
+</body>
 
 </body>
 

@@ -21,7 +21,7 @@ def call_groq(prompt):
             "Content-Type": "application/json"
         },
         json={
-            "model": "llama3-70b-8192",
+            "model": "llama-3.3-70b-versatile",
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 2000,
             "temperature": 0.8
@@ -29,6 +29,9 @@ def call_groq(prompt):
         timeout=30
     )
     data = response.json()
+    logger.info("Groq response: %s", data)
+    if "choices" not in data:
+        raise Exception(f"Groq error: {data}")
     return data["choices"][0]["message"]["content"]
 
 @app.route("/")
@@ -129,7 +132,6 @@ def interpret():
             online=True
         )
 
-        # Build chart data summary for the prompt
         planets = [
             ("Sun",     subject.sun),
             ("Moon",    subject.moon),
@@ -168,7 +170,6 @@ Write directly to {name} in second person (you/your). Be warm, insightful and sp
 
         interpretation = call_groq(prompt)
 
-        # Convert line breaks to HTML paragraphs
         paragraphs = [p.strip() for p in interpretation.split("\n\n") if p.strip()]
         html_content = "\n".join(f"<p>{p}</p>" for p in paragraphs)
 

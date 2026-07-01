@@ -16,8 +16,8 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 ZODIAC_SYMBOLS = {
     "Ari": ("♈", "#FF6B6B"), "Tau": ("♉", "#82C341"), "Gem": ("♊", "#FFD700"),
     "Can": ("♋", "#87CEEB"), "Leo": ("♌", "#FFA500"), "Vir": ("♍", "#9BC850"),
-    "Lib": ("♎", "#FFB6C1"), "Sco": ("♏", "#8B0000"), "Sag": ("♐", "#9B59B6"),
-    "Cap": ("♑", "#5D6D7E"), "Aqu": ("♒", "#3498DB"), "Pis": ("♓", "#1ABC9C"),
+    "Lib": ("♎", "#FFB6C1"), "Sco": ("♏", "#c44569"), "Sag": ("♐", "#9B59B6"),
+    "Cap": ("♑", "#c9a96e"), "Aqu": ("♒", "#3498DB"), "Pis": ("♓", "#1ABC9C"),
 }
 
 SIGN_NAMES = {
@@ -60,70 +60,106 @@ def index():
   body { margin: 0; padding: 0; background: #0d1b2a; overflow: hidden; font-family: Georgia, serif; }
   canvas { position: absolute; top: 0; left: 0; }
   .content { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; padding: 20px; }
-  .title { color: #c9a96e; font-size: 11px; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 16px; }
-  .heading { color: white; font-size: 28px; font-weight: 300; font-style: italic; margin-bottom: 12px; }
-  .subtitle { color: rgba(255,255,255,0.5); font-size: 13px; letter-spacing: 1px; }
-  .divider { color: #c9a96e; font-size: 16px; letter-spacing: 8px; margin: 20px 0; }
+  .brand { color: #c9a96e; font-size: 10px; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 14px; }
+  .heading { color: white; font-size: 28px; font-weight: 300; font-style: italic; margin-bottom: 10px; }
+  .divider { color: #c9a96e; font-size: 16px; letter-spacing: 8px; margin: 16px 0; }
+  .subtitle { color: rgba(255,255,255,0.45); font-size: 13px; letter-spacing: 1px; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div class="content">
-  <div class="title">✦ The Tarot of Her ✦</div>
+  <div class="brand">✦ The Tarot of Her ✦</div>
   <div class="heading">Birth Chart Calculator</div>
   <div class="divider">✦ ✦ ✦</div>
   <div class="subtitle">Enter your details above and click Generate My Chart</div>
 </div>
 <script>
-  const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d');
-  let stars = [];
-  let W, H;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const SIGNS = ['♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓'];
+const COLORS = ['#FF6B6B','#82C341','#FFD700','#87CEEB','#FFA500','#9BC850','#FFB6C1','#c44569','#9B59B6','#c9a96e','#3498DB','#1ABC9C'];
+let stars = [], symbols = [];
+let W, H;
 
-  function resize() {
-    W = canvas.width = window.innerWidth || 680;
-    H = canvas.height = window.innerHeight || 400;
-  }
+function resize() {
+  W = canvas.width = window.innerWidth || 680;
+  H = canvas.height = window.innerHeight || 400;
+}
 
-  function init() {
-    resize();
-    stars = [];
-    for (let i = 0; i < 180; i++) {
-      stars.push({
-        x: Math.random() * W,
-        y: Math.random() * H,
-        r: Math.random() * 1.8 + 0.2,
-        alpha: Math.random(),
-        speed: Math.random() * 0.005 + 0.002,
-        phase: Math.random() * Math.PI * 2
-      });
-    }
-  }
-
-  function draw(t) {
-    ctx.fillStyle = '#0d1b2a';
-    ctx.fillRect(0, 0, W, H);
-    stars.forEach(s => {
-      s.alpha = 0.3 + 0.7 * Math.abs(Math.sin(t * s.speed + s.phase));
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,255,255,' + s.alpha + ')';
-      ctx.fill();
+function init() {
+  resize();
+  stars = [];
+  for (let i = 0; i < 180; i++) {
+    stars.push({
+      x: Math.random() * W, y: Math.random() * H,
+      r: Math.random() * 1.5 + 0.2,
+      alpha: Math.random(),
+      speed: Math.random() * 0.004 + 0.001,
+      phase: Math.random() * Math.PI * 2
     });
-    ctx.beginPath();
-    ctx.arc(W - 80, 60, 30, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(201,169,110,0.12)';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(W - 68, 55, 24, 0, Math.PI * 2);
-    ctx.fillStyle = '#0d1b2a';
-    ctx.fill();
-    requestAnimationFrame(draw);
   }
+  symbols = [];
+  for (let i = 0; i < 18; i++) {
+    const idx = i % 12;
+    symbols.push({
+      sign: SIGNS[idx],
+      color: COLORS[idx],
+      x: Math.random() * W,
+      y: Math.random() * H,
+      size: Math.random() * 22 + 14,
+      speedX: (Math.random() - 0.5) * 0.4,
+      speedY: (Math.random() - 0.5) * 0.3,
+      alpha: Math.random() * 0.4 + 0.15,
+      phase: Math.random() * Math.PI * 2,
+      pulseSpeed: Math.random() * 0.003 + 0.001
+    });
+  }
+}
 
-  init();
-  window.addEventListener('resize', init);
+function draw(t) {
+  ctx.fillStyle = '#0d1b2a';
+  ctx.fillRect(0, 0, W, H);
+
+  stars.forEach(s => {
+    s.alpha = 0.2 + 0.7 * Math.abs(Math.sin(t * s.speed + s.phase));
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,' + s.alpha + ')';
+    ctx.fill();
+  });
+
+  ctx.beginPath();
+  ctx.arc(W - 70, 55, 28, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(201,169,110,0.1)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(W - 58, 50, 22, 0, Math.PI * 2);
+  ctx.fillStyle = '#0d1b2a';
+  ctx.fill();
+
+  symbols.forEach(s => {
+    s.x += s.speedX;
+    s.y += s.speedY;
+    if (s.x < -40) s.x = W + 20;
+    if (s.x > W + 40) s.x = -20;
+    if (s.y < -40) s.y = H + 20;
+    if (s.y > H + 40) s.y = -20;
+    const pulse = s.alpha + 0.1 * Math.sin(t * s.pulseSpeed + s.phase);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0.1, Math.min(0.6, pulse));
+    ctx.font = s.size + 'px Georgia';
+    ctx.fillStyle = s.color;
+    ctx.fillText(s.sign, s.x, s.y);
+    ctx.restore();
+  });
+
   requestAnimationFrame(draw);
+}
+
+init();
+window.addEventListener('resize', init);
+requestAnimationFrame(draw);
 </script>
 </body>
 </html>"""

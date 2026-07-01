@@ -57,20 +57,74 @@ def index():
 <head>
 <meta charset="UTF-8">
 <style>
-body { margin:0; display:flex; justify-content:center; align-items:center; height:100vh; background:#f7f4ec; font-family:Georgia,serif; }
-.container { text-align:center; }
-.hourglass { font-size:100px; animation:spin 2.5s linear infinite; display:inline-block; }
-h1 { color:#1b355d; margin-top:20px; font-weight:normal; }
-p { color:#666; }
-@keyframes spin { from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
+  body { margin: 0; padding: 0; background: #0d1b2a; overflow: hidden; font-family: Georgia, serif; }
+  canvas { position: absolute; top: 0; left: 0; }
+  .content { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; padding: 20px; }
+  .title { color: #c9a96e; font-size: 11px; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 16px; }
+  .heading { color: white; font-size: 28px; font-weight: 300; font-style: italic; margin-bottom: 12px; }
+  .subtitle { color: rgba(255,255,255,0.5); font-size: 13px; letter-spacing: 1px; }
+  .divider { color: #c9a96e; font-size: 16px; letter-spacing: 8px; margin: 20px 0; }
 </style>
 </head>
 <body>
-<div class="container">
-  <div class="hourglass">⏳</div>
-  <h1>Your Chart is Ready to Generate</h1>
-  <p>Enter your birth details above and click Generate</p>
+<canvas id="c"></canvas>
+<div class="content">
+  <div class="title">✦ The Tarot of Her ✦</div>
+  <div class="heading">Birth Chart Calculator</div>
+  <div class="divider">✦ ✦ ✦</div>
+  <div class="subtitle">Enter your details above and click Generate My Chart</div>
 </div>
+<script>
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let stars = [];
+  let W, H;
+
+  function resize() {
+    W = canvas.width = window.innerWidth || 680;
+    H = canvas.height = window.innerHeight || 400;
+  }
+
+  function init() {
+    resize();
+    stars = [];
+    for (let i = 0; i < 180; i++) {
+      stars.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: Math.random() * 1.8 + 0.2,
+        alpha: Math.random(),
+        speed: Math.random() * 0.005 + 0.002,
+        phase: Math.random() * Math.PI * 2
+      });
+    }
+  }
+
+  function draw(t) {
+    ctx.fillStyle = '#0d1b2a';
+    ctx.fillRect(0, 0, W, H);
+    stars.forEach(s => {
+      s.alpha = 0.3 + 0.7 * Math.abs(Math.sin(t * s.speed + s.phase));
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,' + s.alpha + ')';
+      ctx.fill();
+    });
+    ctx.beginPath();
+    ctx.arc(W - 80, 60, 30, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(201,169,110,0.12)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(W - 68, 55, 24, 0, Math.PI * 2);
+    ctx.fillStyle = '#0d1b2a';
+    ctx.fill();
+    requestAnimationFrame(draw);
+  }
+
+  init();
+  window.addEventListener('resize', init);
+  requestAnimationFrame(draw);
+</script>
 </body>
 </html>"""
 
@@ -201,10 +255,9 @@ Write directly to {name} in second person (you/your). Be warm, insightful and sp
         paragraphs = [p.strip() for p in interpretation.split("\n\n") if p.strip()]
         html_content = "\n".join(f"<p>{p}</p>" for p in paragraphs)
 
-        # Generate starfield SVG
-        stars = ""
         import random
         random.seed(year + month + day)
+        stars = ""
         for _ in range(80):
             x = random.uniform(0, 800)
             y = random.uniform(0, 200)
@@ -221,36 +274,24 @@ Write directly to {name} in second person (you/your). Be warm, insightful and sp
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{ font-family: Georgia, serif; background: #f7f4ec; color: #2c2c2c; }}
   .page {{ max-width: 800px; margin: 0 auto; background: white; box-shadow: 0 2px 30px rgba(0,0,0,0.12); }}
-
-  /* Starfield header */
   .header {{ position: relative; background: #0d1b2a; overflow: hidden; padding: 50px 40px 40px; text-align: center; }}
   .header svg {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; }}
   .header-content {{ position: relative; z-index: 2; }}
   .header h1 {{ color: white; font-size: 28px; font-weight: normal; letter-spacing: 2px; margin-bottom: 8px; }}
   .header .subtitle {{ color: rgba(255,255,255,0.6); font-size: 13px; letter-spacing: 1px; }}
-
-  /* Big Three */
-  .big-three {{ display: flex; justify-content: center; gap: 0; background: #0d1b2a; padding: 0 40px 40px; }}
-  .sign-card {{ flex: 1; text-align: center; padding: 25px 15px; border-radius: 12px; margin: 0 8px; background: rgba(255,255,255,0.07); }}
-  .sign-card .label {{ font-size: 10px; text-transform: uppercase; letter-spacing: 3px; color: rgba(255,255,255,0.5); margin-bottom: 12px; }}
-  .sign-card .zodiac-symbol {{ font-size: 52px; line-height: 1; margin-bottom: 8px; }}
-  .sign-card .sign-name {{ color: white; font-size: 16px; letter-spacing: 1px; }}
-
-  /* Body */
+  .header .gold {{ color: #c9a96e; font-size: 11px; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 12px; }}
+  .big-three {{ display: flex; justify-content: center; gap: 0; background: #0d1b2a; padding: 0 30px 30px; }}
+  .sign-card {{ flex: 1; text-align: center; padding: 20px 10px; border-radius: 10px; margin: 0 6px; background: rgba(201,169,110,0.1); border: 1px solid rgba(201,169,110,0.2); }}
+  .sign-label {{ font-size: 9px; letter-spacing: 3px; color: rgba(201,169,110,0.7); text-transform: uppercase; margin-bottom: 8px; }}
+  .sign-symbol {{ font-size: 40px; line-height: 1; margin-bottom: 6px; }}
+  .sign-name {{ color: white; font-size: 15px; font-style: italic; }}
   .body {{ padding: 50px; }}
+  .divider {{ text-align: center; color: #c9a96e; font-size: 14px; letter-spacing: 6px; margin: 20px 0; }}
   p {{ line-height: 1.9; font-size: 15px; color: #333; margin-bottom: 22px; }}
-  p:first-child::first-letter {{ font-size: 48px; float: left; line-height: 0.8; margin: 8px 8px 0 0; color: #1b355d; font-weight: bold; }}
-
-  /* Divider */
-  .divider {{ text-align: center; color: #c8b89a; font-size: 22px; margin: 30px 0; letter-spacing: 8px; }}
-
-  /* Print button */
-  .print-btn {{ display: block; margin: 20px auto 0; padding: 14px 50px; background: #1b355d; color: white; border: none; border-radius: 6px; font-size: 15px; font-family: Georgia, serif; cursor: pointer; letter-spacing: 1px; }}
+  p:first-of-type::first-letter {{ font-size: 48px; float: left; line-height: 0.8; margin: 8px 8px 0 0; color: #c9a96e; font-weight: bold; }}
+  .print-btn {{ display: block; margin: 20px auto 0; padding: 14px 50px; background: #1b2d4f; color: #c9a96e; border: none; border-radius: 4px; font-family: Georgia, serif; font-size: 13px; letter-spacing: 2px; cursor: pointer; text-transform: uppercase; }}
   .print-btn:hover {{ background: #2a4a7f; }}
-
-  /* Footer */
-  .footer {{ text-align: center; padding: 30px; color: #aaa; font-size: 12px; border-top: 1px solid #eee; }}
-
+  .footer {{ text-align: center; padding: 25px; color: #aaa; font-size: 11px; letter-spacing: 2px; border-top: 1px solid #eee; margin-top: 40px; }}
   @media print {{
     body {{ background: white; }}
     .page {{ box-shadow: none; }}
@@ -261,42 +302,33 @@ Write directly to {name} in second person (you/your). Be warm, insightful and sp
 </head>
 <body>
 <div class="page">
-
   <div class="header">
     <svg viewBox="0 0 800 200" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
       {stars}
-      <!-- Moon crescent -->
-      <circle cx="720" cy="50" r="35" fill="#f0e68c" opacity="0.15"/>
+      <circle cx="720" cy="50" r="35" fill="#c9a96e" opacity="0.12"/>
       <circle cx="735" cy="45" r="28" fill="#0d1b2a" opacity="1"/>
-      <!-- Constellation dots -->
-      <circle cx="100" cy="80" r="2" fill="white" opacity="0.8"/>
-      <circle cx="130" cy="60" r="1.5" fill="white" opacity="0.7"/>
-      <circle cx="160" cy="90" r="2" fill="white" opacity="0.9"/>
-      <circle cx="145" cy="70" r="1" fill="white" opacity="0.6"/>
-      <line x1="100" y1="80" x2="130" y2="60" stroke="white" stroke-width="0.5" opacity="0.3"/>
-      <line x1="130" y1="60" x2="160" y2="90" stroke="white" stroke-width="0.5" opacity="0.3"/>
-      <line x1="130" y1="60" x2="145" y2="70" stroke="white" stroke-width="0.5" opacity="0.3"/>
     </svg>
     <div class="header-content">
-      <h1>✦ Birth Chart Interpretation ✦</h1>
-      <div class="subtitle">{name} &nbsp;·&nbsp; {city}, {country} &nbsp;·&nbsp; {day}/{month}/{year} &nbsp;·&nbsp; {hour:02d}:{minute:02d}</div>
+      <div class="gold">✦ Birth Chart Interpretation ✦</div>
+      <h1>{name}</h1>
+      <div class="subtitle">{city}, {country} &nbsp;·&nbsp; {day}/{month}/{year} &nbsp;·&nbsp; {hour:02d}:{minute:02d}</div>
     </div>
   </div>
 
   <div class="big-three">
     <div class="sign-card">
-      <div class="label">☉ Sun Sign</div>
-      <div class="zodiac-symbol" style="color:{sun_color}">{sun_symbol}</div>
+      <div class="sign-label">☉ Sun Sign</div>
+      <div class="sign-symbol" style="color:{sun_color}">{sun_symbol}</div>
       <div class="sign-name">{sun_name}</div>
     </div>
     <div class="sign-card">
-      <div class="label">☽ Moon Sign</div>
-      <div class="zodiac-symbol" style="color:{moon_color}">{moon_symbol}</div>
+      <div class="sign-label">☽ Moon Sign</div>
+      <div class="sign-symbol" style="color:{moon_color}">{moon_symbol}</div>
       <div class="sign-name">{moon_name}</div>
     </div>
     <div class="sign-card">
-      <div class="label">↑ Rising Sign</div>
-      <div class="zodiac-symbol" style="color:{asc_color}">{asc_symbol}</div>
+      <div class="sign-label">↑ Rising Sign</div>
+      <div class="sign-symbol" style="color:{asc_color}">{asc_symbol}</div>
       <div class="sign-name">{asc_name}</div>
     </div>
   </div>
@@ -308,10 +340,7 @@ Write directly to {name} in second person (you/your). Be warm, insightful and sp
     <button class="print-btn" onclick="window.print()">⬇ Download as PDF</button>
   </div>
 
-  <div class="footer">
-    Generated by The Tarot of Her &nbsp;·&nbsp; www.thetarotofher.com
-  </div>
-
+  <div class="footer">The Tarot of Her &nbsp;✦&nbsp; www.thetarotofher.com</div>
 </div>
 </body>
 </html>"""

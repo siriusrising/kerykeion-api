@@ -147,7 +147,7 @@ REPORT_STYLE = """
   .body { padding: 50px; }
   .divider { text-align: center; color: #c9a96e; font-size: 14px; letter-spacing: 6px; margin: 20px 0; }
   p { line-height: 1.9; font-size: 15px; color: #333; margin-bottom: 22px; }
-  p:first-of-type::first-letter { font-size: 48px; float: left; line-height: 0.8; margin: 8px 8px 0 0; color: #c9a96e; font-weight: bold; }
+  p:first-of-type::first-letter { font-size: 44px; float: left; line-height: 1; padding-top: 4px; padding-right: 6px; padding-bottom: 2px; color: #c9a96e; font-weight: bold; }
   .print-btn { display: inline-block; margin-top: 20px; padding: 14px 50px; background: #1b2d4f; color: #c9a96e; border: none; border-radius: 4px; font-family: Georgia, serif; font-size: 13px; letter-spacing: 2px; cursor: pointer; text-transform: uppercase; text-decoration: none; }
   .print-btn-wrap { text-align: center; }
   .print-btn:hover { background: #2a4a7f; }

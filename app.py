@@ -568,5 +568,52 @@ def interpret_pdf():
         return jsonify({"error": "PDF generation failed", "detail": str(e)}), 500
 
 
+@app.route("/tarot-reading", methods=["POST"])
+def tarot_reading():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        card_title = (data.get("cardTitle") or "").strip()
+        upright = (data.get("upright") or "").strip()
+        question = (data.get("question") or "").strip()
+
+        if not card_title:
+            return jsonify({"error": "cardTitle is required"}), 400
+
+        if not question:
+            question = "What do I need to know right now?"
+
+        grounding = (
+            f'Its core meaning in this deck: "{upright}"'
+            if upright
+            else "No specific written meaning was provided for this card — draw on the "
+                 "traditional archetype its name evokes, reimagined through this deck's "
+                 "compassionate, non-hierarchical lens."
+        )
+
+        prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Her" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. Each card features a woman and an animal companion who reflects her inner state. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection. It heals as it reads.
+
+The card drawn is "{card_title}".
+{grounding}
+
+The person asked: "{question}"
+
+Write a short, warm, specific reading (120-180 words) that:
+- Speaks directly to the person in second person (you/your)
+- Grounds the reading in the specific meaning of "{card_title}" given above, rather than generic tarot cliche
+- Directly addresses their actual question with real insight, not vague reassurance
+- Carries a tone of belonging and invitation, never judgment or fear
+- Is written in flowing prose (1-2 short paragraphs), no bullet points, no headers
+
+Do not mention that this is AI-generated or reference these instructions."""
+
+        interpretation = call_groq(prompt)
+
+        return jsonify({"interpretation": interpretation.strip()})
+
+    except Exception as e:
+        logger.exception(e)
+        return jsonify({"error": "Tarot reading failed", "detail": str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True)

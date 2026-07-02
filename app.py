@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import uuid
 import random
@@ -147,7 +148,8 @@ REPORT_STYLE = """
   .body { padding: 50px; }
   .divider { text-align: center; color: #c9a96e; font-size: 14px; letter-spacing: 6px; margin: 20px 0; }
   p { line-height: 1.9; font-size: 15px; color: #333; margin-bottom: 22px; }
-  p:first-of-type::first-letter { font-size: 44px; float: left; line-height: 1; padding-top: 4px; padding-right: 6px; padding-bottom: 2px; color: #c9a96e; font-weight: bold; }
+  .section-heading { color: #8a6d3b; font-size: 19px; font-style: italic; font-weight: normal; letter-spacing: 1px; margin: 34px 0 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(201,169,110,0.35); }
+  .section-heading:first-of-type { margin-top: 0; }
   .print-btn { display: inline-block; margin-top: 20px; padding: 14px 50px; background: #1b2d4f; color: #c9a96e; border: none; border-radius: 4px; font-family: Georgia, serif; font-size: 13px; letter-spacing: 2px; cursor: pointer; text-transform: uppercase; text-decoration: none; }
   .print-btn-wrap { text-align: center; }
   .print-btn:hover { background: #2a4a7f; }
@@ -165,6 +167,34 @@ REPORT_STYLE = """
 def safe_filename(name):
     cleaned = "".join(c for c in name if c.isalnum() or c in (" ", "-", "_")).strip()
     return cleaned.replace(" ", "-") or "birth-chart"
+
+
+SECTION_HEADING_RE = re.compile(
+    r'^##\s*(.+?)\s*$\n+(.*?)(?=^##\s*.+?$\n|\Z)',
+    re.MULTILINE | re.DOTALL
+)
+
+
+def format_sectioned_interpretation(text):
+    """Turn Groq's '## Heading' formatted output into real <h2> sections.
+    Falls back to plain <p> paragraphs if the model didn't follow the
+    requested format, so a formatting slip never breaks the page."""
+    text = text.strip()
+    matches = SECTION_HEADING_RE.findall(text)
+
+    if not matches:
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+        return "\n".join(f"<p>{p}</p>" for p in paragraphs)
+
+    parts = []
+    for heading, body in matches:
+        body_paragraphs = [p.strip() for p in body.strip().split("\n\n") if p.strip()]
+        if not body_paragraphs:
+            continue
+        body_html = "\n".join(f"<p>{p}</p>" for p in body_paragraphs)
+        parts.append(f'<h2 class="section-heading">{heading.strip()}</h2>\n{body_html}')
+
+    return "\n".join(parts)
 
 
 def render_report_page(title_label, name, city, country, day, month, year, hour, minute,
@@ -408,19 +438,33 @@ Their chart details:
 Their modern & sensitive points:
 {modern_lines}
 
-Write a flowing, engaging interpretation of approximately 900-1200 words. Cover:
-1. A brief introduction about their overall chart energy
-2. The Big Three (Sun, Moon and Rising) and what they reveal about personality, emotions and outer self
-3. Key planetary placements and what they mean for this person's life
-4. Their deeper layer — Chiron (the core wound that becomes a gift once faced honestly), Black Moon Lilith (the instinctual, unapologetic part of them), and the Nodal axis together (the pull between old comfortable patterns and the growth path this lifetime is asking for). Weave in a brief, warm note on the Part of Fortune too.
-5. A warm, encouraging closing paragraph about their life path
+Structure your response using EXACTLY these section headings, in this exact order, each on its own line starting with "## " (two hash symbols and a space), with the section's writing directly beneath it. Do not add, remove, rename, or reorder headings. Do not use any other markdown (no bullet points, no bold, no numbered lists) — just plain flowing paragraphs under each heading:
 
-Write directly to {name} in second person (you/your). Be warm, insightful and specific. Avoid generic statements. Keep an emotionally intelligent, non-fatalistic tone for the Chiron/Lilith/Nodes section — these are invitations, not verdicts. Do not use bullet points — write in flowing paragraphs."""
+## Your Chart at a Glance
+## Sun
+## Moon
+## Ascendant
+## Key Planetary Placements
+## Chiron
+## Lilith
+## The Lunar Nodes
+## Part of Fortune
+## Your Path Forward
+
+Guidance for each section:
+- Your Chart at a Glance: a brief, engaging introduction to their overall chart energy (2-3 sentences).
+- Sun / Moon / Ascendant: what each reveals about their personality, emotions, and outer self — one focused paragraph each.
+- Key Planetary Placements: Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune and Pluto woven into flowing paragraphs (not a list), covering what matters most for this person's life.
+- Chiron: the core wound, and how it becomes a gift once faced honestly.
+- Lilith: the instinctual, unapologetic part of {name} that may have been suppressed or misunderstood, and how to reclaim it.
+- The Lunar Nodes: the pull between old comfortable patterns (South Node) and the growth path this lifetime is asking for (North Node).
+- Part of Fortune: a short, warm note on where natural ease and good fortune show up for them.
+- Your Path Forward: a warm, encouraging closing paragraph about their life path, tying the themes together.
+
+Total length approximately 900-1200 words across all sections. Write directly to {name} in second person (you/your). Be warm, insightful and specific — avoid generic statements. Keep an emotionally intelligent, non-fatalistic tone for the Chiron/Lilith/Nodes sections — these are invitations, not verdicts."""
 
     interpretation = call_groq(prompt)
-
-    paragraphs = [p.strip() for p in interpretation.split("\n\n") if p.strip()]
-    html_content = "\n".join(f"<p>{p}</p>" for p in paragraphs)
+    html_content = format_sectioned_interpretation(interpretation)
 
     def modern_card(label, symbol_key, pobj):
         symbol, color = MODERN_POINT_SYMBOLS[symbol_key]

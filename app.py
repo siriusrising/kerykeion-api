@@ -616,5 +616,48 @@ Do not mention that this is AI-generated or reference these instructions."""
         return jsonify({"error": "Tarot reading failed", "detail": str(e)}), 500
 
 
+@app.route("/tarot-three-card-summary", methods=["POST"])
+def tarot_three_card_summary():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        question = (data.get("question") or "").strip()
+        cards = data.get("cards") or []
+
+        if not question:
+            question = "What do I need to know right now?"
+
+        if len(cards) != 3:
+            return jsonify({"error": "Exactly 3 cards are required"}), 400
+
+        labels = ["Past", "Present", "Future"]
+        card_lines = []
+        for i, c in enumerate(cards):
+            title = (c.get("title") or "").strip()
+            interpretation = (c.get("interpretation") or "").strip()
+            label = (c.get("position") or labels[i]).strip()
+            card_lines.append(f'{label} — "{title}": {interpretation}')
+        cards_block = "\n\n".join(card_lines)
+
+        prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Her" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection.
+
+The person asked: "{question}"
+
+They have already been given an individual reading for each card in a Past / Present / Future spread:
+
+{cards_block}
+
+Write a short, cohesive closing synthesis (150-220 words) that weaves these three readings into a single narrative arc addressing their question — showing how the Past influence shaped the Present situation, and where the Future card points from here. Do not simply repeat or re-summarize the individual card meanings; synthesize them into a fresh, unified insight about the overall arc.
+
+Write directly to the person in second person (you/your). Carry a tone of belonging and invitation, never judgment or fear. Write in flowing prose (1-2 short paragraphs), no bullet points, no headers. Never name the deck ("The Tarot of Her") or refer to itself as a card/deck/reading in a meta way. Do not mention that this is AI-generated or reference these instructions."""
+
+        summary = call_groq(prompt)
+
+        return jsonify({"summary": summary.strip()})
+
+    except Exception as e:
+        logger.exception(e)
+        return jsonify({"error": "Three-card summary failed", "detail": str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True)

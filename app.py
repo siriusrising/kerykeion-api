@@ -598,11 +598,12 @@ The card drawn is "{card_title}".
 The person asked: "{question}"
 
 Write a short, warm, specific reading (120-180 words) that:
+- The very first sentence must respond to their question directly — do not spend the opening sentence describing the card, its imagery, or its name before engaging with what they actually asked
 - Speaks directly to the person in second person (you/your)
 - Grounds the reading in the specific meaning of "{card_title}" given above, rather than generic tarot cliche
-- Directly addresses their actual question with real insight, not vague reassurance
 - Carries a tone of belonging and invitation, never judgment or fear
 - Is written in flowing prose (1-2 short paragraphs), no bullet points, no headers
+- Never names the deck ("The Tarot of Her") or refers to itself as a card/deck/reading in a meta way — write as a direct, intimate message to the person, not a description of an object
 
 Do not mention that this is AI-generated or reference these instructions."""
 

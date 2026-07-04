@@ -574,6 +574,8 @@ def tarot_reading():
         data = request.get_json(force=True, silent=True) or {}
         card_title = (data.get("cardTitle") or "").strip()
         upright = (data.get("upright") or "").strip()
+        animal = (data.get("animal") or "").strip()
+        animal_meaning = (data.get("animalMeaning") or "").strip()
         question = (data.get("question") or "").strip()
 
         if not card_title:
@@ -590,10 +592,17 @@ def tarot_reading():
                  "compassionate, non-hierarchical lens."
         )
 
-        prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Her" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. Each card features a woman and an animal companion who reflects her inner state. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection. It heals as it reads.
+        if animal:
+            animal_grounding = f'\nHer animal companion on this card is the {animal}.'
+            if animal_meaning:
+                animal_grounding += f' What the {animal} teaches: "{animal_meaning}"'
+        else:
+            animal_grounding = ""
+
+        prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Her" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. Each card features a woman and an animal companion (a familiar) who reflects her inner state and deepens the card's meaning. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection. It heals as it reads.
 
 The card drawn is "{card_title}".
-{grounding}
+{grounding}{animal_grounding}
 
 The person asked: "{question}"
 
@@ -601,6 +610,7 @@ Write a short, warm, specific reading (120-180 words) that:
 - The very first sentence must respond to their question directly — do not spend the opening sentence describing the card, its imagery, or its name before engaging with what they actually asked
 - Speaks directly to the person in second person (you/your)
 - Grounds the reading in the specific meaning of "{card_title}" given above, rather than generic tarot cliche
+- If an animal companion is given above, weave it in naturally as part of the guidance (what it teaches, how it mirrors the person's situation) rather than just mentioning it exists — but don't force it if it doesn't fit naturally within the word count
 - Carries a tone of belonging and invitation, never judgment or fear
 - Is written in flowing prose (1-2 short paragraphs), no bullet points, no headers
 - Never names the deck ("The Tarot of Her") or refers to itself as a card/deck/reading in a meta way — write as a direct, intimate message to the person, not a description of an object

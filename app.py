@@ -91,7 +91,7 @@ def call_groq(prompt):
             "Content-Type": "application/json"
         },
         json={
-            "model": "llama-3.3-70b-versatile",
+            "model": "llama-3.1-8b-instant",
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 2000,
             "temperature": 0.8
@@ -574,9 +574,12 @@ def tarot_reading():
         data = request.get_json(force=True, silent=True) or {}
         card_title = (data.get("cardTitle") or "").strip()
         upright = (data.get("upright") or "").strip()
+        reversed_meaning = (data.get("reversedMeaning") or "").strip()
         animal = (data.get("animal") or "").strip()
         animal_meaning = (data.get("animalMeaning") or "").strip()
         question = (data.get("question") or "").strip()
+        orientation = (data.get("orientation") or "upright").strip().lower()
+        is_reversed = orientation == "reversed"
 
         if not card_title:
             return jsonify({"error": "cardTitle is required"}), 400
@@ -584,13 +587,26 @@ def tarot_reading():
         if not question:
             question = "What do I need to know right now?"
 
-        grounding = (
-            f'Its core meaning in this deck: "{upright}"'
-            if upright
-            else "No specific written meaning was provided for this card — draw on the "
-                 "traditional archetype its name evokes, reimagined through this deck's "
-                 "compassionate, non-hierarchical lens."
-        )
+        if is_reversed:
+            if reversed_meaning:
+                grounding = f'This card was drawn reversed. Its reversed meaning in this deck: "{reversed_meaning}"'
+            else:
+                grounding = (
+                    f'This card was drawn reversed. No specific written reversed meaning was provided — '
+                    f'interpret it as the upright meaning turned inward: blocked, delayed, internalized, or '
+                    f'not yet fully expressed, rather than a "bad" or punishing version of the card. '
+                    f'Its upright meaning for reference: "{upright}"' if upright else
+                    'interpret it as this card\'s energy turned inward: blocked, delayed, or not yet fully '
+                    'expressed, rather than a "bad" or punishing version of the card.'
+                )
+        else:
+            grounding = (
+                f'Its core meaning in this deck: "{upright}"'
+                if upright
+                else "No specific written meaning was provided for this card — draw on the "
+                     "traditional archetype its name evokes, reimagined through this deck's "
+                     "compassionate, non-hierarchical lens."
+            )
 
         if animal:
             animal_grounding = f'\nHer animal companion on this card is the {animal}.'
@@ -599,19 +615,26 @@ def tarot_reading():
         else:
             animal_grounding = ""
 
+        orientation_note = (
+            "\n\nThis card appeared reversed. Reversed never means bad luck or punishment in this deck — "
+            "it simply means the energy is turned inward, delayed, or asking for more awareness before it "
+            "can flow freely. Keep the same tone of belonging and invitation as an upright card."
+            if is_reversed else ""
+        )
+
         prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Her" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. Each card features a woman and an animal companion (a familiar) who reflects her inner state and deepens the card's meaning. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection. It heals as it reads.
 
 The card drawn is "{card_title}".
-{grounding}{animal_grounding}
+{grounding}{animal_grounding}{orientation_note}
 
 The person asked: "{question}"
 
 Write a short, warm, specific reading (120-180 words) that:
 - The very first sentence must respond to their question directly — do not spend the opening sentence describing the card, its imagery, or its name before engaging with what they actually asked
 - Speaks directly to the person in second person (you/your)
-- Grounds the reading in the specific meaning of "{card_title}" given above, rather than generic tarot cliche
+- Grounds the reading in the specific meaning given above, rather than generic tarot cliche
 - If an animal companion is given above, weave it in naturally as part of the guidance (what it teaches, how it mirrors the person's situation) rather than just mentioning it exists — but don't force it if it doesn't fit naturally within the word count
-- Carries a tone of belonging and invitation, never judgment or fear
+- Carries a tone of belonging and invitation, never judgment or fear — this applies equally to reversed cards
 - Is written in flowing prose (1-2 short paragraphs), no bullet points, no headers
 - Never names the deck ("The Tarot of Her") or refers to itself as a card/deck/reading in a meta way — write as a direct, intimate message to the person, not a description of an object
 

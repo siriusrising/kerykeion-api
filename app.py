@@ -910,6 +910,19 @@ Write directly to the person in second person (you/your). Carry a tone of belong
         return jsonify({"error": "Celtic Cross summary failed", "detail": str(e)}), 500
 
 
+@app.route("/debug-sleep")
+def debug_sleep():
+    """Diagnostic only — not used by the site. Visit this directly in a
+    browser with ?seconds=N (e.g. /debug-sleep?seconds=20) to find exactly
+    how long a request can run before Render's platform kills it, regardless
+    of gunicorn's own --timeout setting. Test increasing values (10, 20, 30,
+    45, 60) to find the actual ceiling. Delete this route once we know the
+    answer — it's not meant to stay in production."""
+    seconds = int(request.args.get("seconds", 10))
+    time.sleep(seconds)
+    return jsonify({"slept_seconds": seconds, "status": "completed without timing out"})
+
+
 @app.route("/tarot-celtic-cross-pdf", methods=["POST"])
 def tarot_celtic_cross_pdf():
     """Single-request PDF generation for the Celtic Cross spread.

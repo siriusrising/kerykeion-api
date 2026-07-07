@@ -7,6 +7,8 @@ import base64
 import logging
 import requests
 import weasyprint
+from io import BytesIO
+from PIL import Image
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, request, Response, jsonify
 from kerykeion import AstrologicalSubjectFactory
@@ -264,21 +266,37 @@ def render_report_page(title_label, name, city, country, day, month, year, hour,
 </html>"""
 
 
+MAX_PDF_IMAGE_WIDTH = 400  # px — plenty for a print-quality card thumbnail in the PDF
+
+
 def fetch_image_as_data_uri(url, timeout=8):
-    """Fetches an image and returns it as a base64 data URI, so weasyprint
-    never has to make its own network request for it later. Returns None on
-    any failure (bad URL, timeout, non-200) rather than raising — a single
-    missing card image should never crash the whole PDF."""
+    """Fetches an image, downsizes it, and returns it as a base64 data URI,
+    so weasyprint never has to make its own network request for it later.
+    Downsizing matters here: full-size deck art (often 1500px+) is much
+    bigger than a PDF thumbnail needs, and that extra size costs real time
+    both to fetch and for weasyprint to lay out and embed. Returns None on
+    any failure (bad URL, timeout, non-200, bad image data) rather than
+    raising — a single missing card image should never crash the whole PDF."""
     try:
         response = requests.get(url, timeout=timeout)
         if not response.ok:
             logger.warning("Image fetch failed (%s): %s", response.status_code, url)
             return None
-        content_type = response.headers.get("Content-Type", "image/jpeg")
-        encoded = base64.b64encode(response.content).decode("ascii")
-        return f"data:{content_type};base64,{encoded}"
+
+        image = Image.open(BytesIO(response.content))
+        image = image.convert("RGB")
+
+        if image.width > MAX_PDF_IMAGE_WIDTH:
+            ratio = MAX_PDF_IMAGE_WIDTH / image.width
+            new_size = (MAX_PDF_IMAGE_WIDTH, int(image.height * ratio))
+            image = image.resize(new_size, Image.LANCZOS)
+
+        buffer = BytesIO()
+        image.save(buffer, format="JPEG", quality=80)
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        return f"data:image/jpeg;base64,{encoded}"
     except Exception as e:
-        logger.warning("Image fetch error for %s: %s", url, e)
+        logger.warning("Image fetch/resize error for %s: %s", url, e)
         return None
 
 
@@ -914,11 +932,22 @@ def tarot_celtic_cross_pdf():
         if not summary:
             return jsonify({"error": "summary is required"}), 400
 
+        t0 = time.time()
         cards_with_embedded_images = prefetch_card_images(cards)
+        t1 = time.time()
+        logger.info("Celtic Cross PDF: image prefetch took %.2fs", t1 - t0)
 
         html = render_celtic_cross_pdf_html(question, cards_with_embedded_images, summary)
+        t2 = time.time()
+        logger.info("Celtic Cross PDF: HTML build took %.2fs", t2 - t1)
+
         pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+        t3 = time.time()
+        logger.info("Celtic Cross PDF: weasyprint render took %.2fs", t3 - t2)
+
         pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
+        t4 = time.time()
+        logger.info("Celtic Cross PDF: base64 encode took %.2fs (total %.2fs)", t4 - t3, t4 - t0)
 
         return jsonify({"pdf_base64": pdf_base64})
 

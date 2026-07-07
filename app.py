@@ -3,6 +3,7 @@ import re
 import time
 import uuid
 import random
+import base64
 import logging
 import requests
 import weasyprint
@@ -21,6 +22,10 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 # Short-lived cache so the "Download as PDF" button reuses the exact same
 # generated HTML the person is already looking at, instead of firing a
 # second Groq call that could come back with slightly different wording.
+# NOTE: this in-memory cache is only used by the birth chart PDF flow below.
+# The Celtic Cross PDF route does NOT use this cache anymore — see the note
+# on that route for why (Render free-tier restarts were wiping tokens
+# between the prepare and download requests, causing intermittent 404s).
 REPORT_CACHE = {}
 CACHE_TTL_SECONDS = 3600
 
@@ -837,13 +842,24 @@ Write directly to the person in second person (you/your). Carry a tone of belong
         return jsonify({"error": "Celtic Cross summary failed", "detail": str(e)}), 500
 
 
-@app.route("/tarot-celtic-cross-pdf-prepare", methods=["POST"])
-def tarot_celtic_cross_pdf_prepare():
-    """Step 1 of 2 for the Celtic Cross PDF download. Takes the already-drawn
-    spread, question, and already-generated summary (no new Groq call here —
-    this just formats what the person is already looking at), builds the PDF's
-    HTML, and caches it behind a short token. Mirrors the birth chart's
-    /interpret -> /interpret-pdf token pattern."""
+@app.route("/tarot-celtic-cross-pdf", methods=["POST"])
+def tarot_celtic_cross_pdf():
+    """Single-request PDF generation for the Celtic Cross spread.
+
+    NOTE: this used to be a two-step flow (a /prepare route that cached the
+    HTML behind a token, then a separate GET route to convert that cached
+    HTML into a PDF). That approach relied on an in-memory dict surviving
+    between two separate requests — but Render's free tier restarts the
+    process often enough (auto-sleep after inactivity, redeploys, etc.) that
+    the cache was frequently empty by the time the second request landed,
+    producing intermittent 404s / "expired link" errors with no clear pattern.
+
+    This version does everything in one request: build the HTML, render the
+    PDF with weasyprint, and return it base64-encoded in the same response.
+    No cache, no token, no second round-trip — so nothing can go stale
+    between steps. The tradeoff is a slightly heavier single request, but
+    that's a fair trade for reliability here.
+    """
     try:
         data = request.get_json(force=True, silent=True) or {}
         question = (data.get("question") or "").strip() or "What do I need to know right now?"
@@ -856,37 +872,10 @@ def tarot_celtic_cross_pdf_prepare():
             return jsonify({"error": "summary is required"}), 400
 
         html = render_celtic_cross_pdf_html(question, cards, summary)
-
-        token = uuid.uuid4().hex[:12]
-        cache_store(token, html)
-
-        return jsonify({"token": token})
-
-    except Exception as e:
-        logger.exception(e)
-        return jsonify({"error": "PDF preparation failed", "detail": str(e)}), 500
-
-
-@app.route("/tarot-celtic-cross-pdf")
-def tarot_celtic_cross_pdf():
-    """Step 2 of 2: takes the token from the prepare step, converts the
-    cached HTML to an actual PDF, and returns it as a download."""
-    try:
-        token = request.args.get("token")
-        html = cache_get(token) if token else None
-
-        if html is None:
-            return jsonify({"error": "This link has expired. Please draw your spread again."}), 404
-
         pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
 
-        return Response(
-            pdf_bytes,
-            mimetype="application/pdf",
-            headers={
-                "Content-Disposition": 'attachment; filename="your-celtic-cross-journey.pdf"'
-            }
-        )
+        return jsonify({"pdf_base64": pdf_base64})
 
     except Exception as e:
         logger.exception(e)

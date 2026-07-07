@@ -866,19 +866,12 @@ def tarot_celtic_cross_summary():
             title = (c.get("title") or "").strip()
             orientation = (c.get("orientation") or "upright").strip().lower()
             meaning = (c.get("meaning") or "").strip()
-            animal = (c.get("animal") or "").strip()
-            animal_meaning = (c.get("animalMeaning") or "").strip()
 
             line = f'{position} — "{title}"'
             if orientation == "reversed":
                 line += " (reversed)"
             if meaning:
                 line += f': {meaning}'
-            if animal:
-                line += f'. Her animal companion here is the {animal}'
-                if animal_meaning:
-                    line += f' ({animal_meaning})'
-                line += "."
             card_lines.append(line)
 
         cards_block = "\n\n".join(card_lines)
@@ -887,7 +880,7 @@ def tarot_celtic_cross_summary():
 
 The person asked: "{question}"
 
-They have drawn a ten-card Celtic Cross spread. Here are the ten positions, in order, each with its card, orientation, meaning, and animal companion where one appears:
+They have drawn a ten-card Celtic Cross spread. Here are the ten positions, in order, each with its card, orientation, and meaning:
 
 {cards_block}
 
@@ -896,7 +889,6 @@ Write this as a single, flowing narrative — a genuine mystical journey of self
 - Continually tie the narrative back to their actual question. Don't just describe each card in the abstract — show how each stage speaks to what they specifically asked.
 - Build genuine forward motion and arc, the way an experienced reader would talk someone through a full spread out loud — not ten separate mini-paragraphs stitched together, but one continuous voyage with a beginning, a turning point, and an arrival.
 - Where reversed cards appear, treat them as the energy turned inward, delayed, or asking for more awareness — never as bad luck or punishment.
-- Weave in animal companions naturally where they appear, as guides or mirrors along the journey, rather than listing them.
 - Let the ending (Final Outcome) land with genuine weight — this is the arrival point of the initiation, not just another stage.
 
 Write directly to the person in second person (you/your). Carry a tone of belonging and invitation throughout, never judgment or fear. Write in flowing prose, no bullet points, no headers, no numbered stages. Length approximately 400-500 words — enough room for a real journey across ten stages, but still one continuous piece, not ten mini-sections. Never name the deck ("The Tarot of Her") or refer to itself as a card/deck/reading in a meta way. Do not mention that this is AI-generated or reference these instructions."""

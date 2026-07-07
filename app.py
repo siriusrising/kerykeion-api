@@ -163,6 +163,19 @@ REPORT_STYLE = """
   }
 """
 
+# Extra styles specific to the Celtic Cross PDF (card grid + question callout).
+# Kept separate from REPORT_STYLE so the birth chart report is never affected.
+TAROT_PDF_STYLE = """
+  .question-callout { text-align: center; font-style: italic; color: #8a6d3b; font-size: 16px; margin: 0 0 30px; padding: 18px; border-top: 1px solid rgba(201,169,110,0.35); border-bottom: 1px solid rgba(201,169,110,0.35); }
+  .card-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; margin-bottom: 10px; }
+  .tarot-card { width: 140px; text-align: center; }
+  .tarot-card img { width: 100%; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
+  .tarot-card img.reversed { transform: rotate(180deg); }
+  .tarot-card .position-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #8a6d3b; margin-top: 8px; }
+  .tarot-card .card-title { font-size: 13px; font-style: italic; color: #333; margin-top: 2px; }
+  .journey-heading { text-align: center; color: #8a6d3b; font-size: 20px; font-style: italic; margin: 40px 0 20px; }
+"""
+
 
 def safe_filename(name):
     cleaned = "".join(c for c in name if c.isalnum() or c in (" ", "-", "_")).strip()
@@ -240,6 +253,71 @@ def render_report_page(title_label, name, city, country, day, month, year, hour,
   </div>
 
   <div class="footer">The Tarot of Her &nbsp;✦&nbsp; www.thetarotofher.com</div>
+</div>
+</body>
+</html>"""
+
+
+def render_celtic_cross_pdf_html(question, cards, summary):
+    """Builds the full HTML for a Celtic Cross keepsake PDF: the question,
+    a labeled grid of all 10 cards, and the journey summary underneath.
+    Uses a fixed seed for the starfield since there's no birth date here."""
+    stars = stars_svg(7, 7, 2026)
+
+    card_tiles = []
+    for card in cards:
+        image_url = card.get("image", "")
+        orientation = (card.get("orientation") or "upright").strip().lower()
+        img_class = "reversed" if orientation == "reversed" else ""
+        position = card.get("position", "")
+        title = card.get("title", "")
+
+        card_tiles.append(f"""
+    <div class="tarot-card">
+      <img class="{img_class}" src="{image_url}" alt="{title}">
+      <div class="position-label">{position}</div>
+      <div class="card-title">{title}{' (reversed)' if orientation == 'reversed' else ''}</div>
+    </div>""")
+
+    cards_html = "".join(card_tiles)
+
+    summary_paragraphs = [p.strip() for p in summary.strip().split("\n\n") if p.strip()]
+    summary_html = "\n".join(f"<p>{p}</p>" for p in summary_paragraphs)
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Your Celtic Cross Journey</title>
+<style>{REPORT_STYLE}{TAROT_PDF_STYLE}</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <svg viewBox="0 0 800 200" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      {stars}
+      <circle cx="720" cy="50" r="35" fill="#c9a96e" opacity="0.12"/>
+      <circle cx="735" cy="45" r="28" fill="#0d1b2a" opacity="1"/>
+    </svg>
+    <div class="header-content">
+      <div class="gold">✦ Celtic Cross Spread ✦</div>
+      <h1>Your Journey</h1>
+      <div class="subtitle">Oraclyn &nbsp;·&nbsp; www.oraclyn.fr</div>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="question-callout">"{question}"</div>
+
+    <div class="card-grid">
+      {cards_html}
+    </div>
+
+    <div class="journey-heading">✦ The Journey ✦</div>
+    {summary_html}
+  </div>
+
+  <div class="footer">Oraclyn &nbsp;✦&nbsp; www.oraclyn.fr</div>
 </div>
 </body>
 </html>"""
@@ -757,6 +835,62 @@ Write directly to the person in second person (you/your). Carry a tone of belong
     except Exception as e:
         logger.exception(e)
         return jsonify({"error": "Celtic Cross summary failed", "detail": str(e)}), 500
+
+
+@app.route("/tarot-celtic-cross-pdf-prepare", methods=["POST"])
+def tarot_celtic_cross_pdf_prepare():
+    """Step 1 of 2 for the Celtic Cross PDF download. Takes the already-drawn
+    spread, question, and already-generated summary (no new Groq call here —
+    this just formats what the person is already looking at), builds the PDF's
+    HTML, and caches it behind a short token. Mirrors the birth chart's
+    /interpret -> /interpret-pdf token pattern."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        question = (data.get("question") or "").strip() or "What do I need to know right now?"
+        cards = data.get("cards") or []
+        summary = (data.get("summary") or "").strip()
+
+        if len(cards) != 10:
+            return jsonify({"error": "Exactly 10 cards are required"}), 400
+        if not summary:
+            return jsonify({"error": "summary is required"}), 400
+
+        html = render_celtic_cross_pdf_html(question, cards, summary)
+
+        token = uuid.uuid4().hex[:12]
+        cache_store(token, html)
+
+        return jsonify({"token": token})
+
+    except Exception as e:
+        logger.exception(e)
+        return jsonify({"error": "PDF preparation failed", "detail": str(e)}), 500
+
+
+@app.route("/tarot-celtic-cross-pdf")
+def tarot_celtic_cross_pdf():
+    """Step 2 of 2: takes the token from the prepare step, converts the
+    cached HTML to an actual PDF, and returns it as a download."""
+    try:
+        token = request.args.get("token")
+        html = cache_get(token) if token else None
+
+        if html is None:
+            return jsonify({"error": "This link has expired. Please draw your spread again."}), 404
+
+        pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+
+        return Response(
+            pdf_bytes,
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": 'attachment; filename="your-celtic-cross-journey.pdf"'
+            }
+        )
+
+    except Exception as e:
+        logger.exception(e)
+        return jsonify({"error": "PDF generation failed", "detail": str(e)}), 500
 
 
 if __name__ == "__main__":

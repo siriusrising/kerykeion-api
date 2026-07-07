@@ -7,6 +7,7 @@ import base64
 import logging
 import requests
 import weasyprint
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, request, Response, jsonify
 from kerykeion import AstrologicalSubjectFactory
 from kerykeion.chart_data_factory import ChartDataFactory
@@ -261,6 +262,55 @@ def render_report_page(title_label, name, city, country, day, month, year, hour,
 </div>
 </body>
 </html>"""
+
+
+def fetch_image_as_data_uri(url, timeout=8):
+    """Fetches an image and returns it as a base64 data URI, so weasyprint
+    never has to make its own network request for it later. Returns None on
+    any failure (bad URL, timeout, non-200) rather than raising — a single
+    missing card image should never crash the whole PDF."""
+    try:
+        response = requests.get(url, timeout=timeout)
+        if not response.ok:
+            logger.warning("Image fetch failed (%s): %s", response.status_code, url)
+            return None
+        content_type = response.headers.get("Content-Type", "image/jpeg")
+        encoded = base64.b64encode(response.content).decode("ascii")
+        return f"data:{content_type};base64,{encoded}"
+    except Exception as e:
+        logger.warning("Image fetch error for %s: %s", url, e)
+        return None
+
+
+def prefetch_card_images(cards):
+    """Fetches all card images in parallel and returns a new list of cards
+    with 'image' replaced by a base64 data URI wherever the fetch succeeded.
+    This is the key fix for PDF generation timing out: weasyprint fetching
+    10 images itself, one at a time, over the network was the main source of
+    request time. Doing it ourselves in parallel is dramatically faster, and
+    means weasyprint's own work becomes purely local/CPU-bound."""
+    results = [None] * len(cards)
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_index = {
+            executor.submit(fetch_image_as_data_uri, card.get("image", "")): i
+            for i, card in enumerate(cards)
+        }
+        for future in as_completed(future_to_index):
+            i = future_to_index[future]
+            results[i] = future.result()
+
+    updated_cards = []
+    for card, data_uri in zip(cards, results):
+        new_card = dict(card)
+        if data_uri:
+            new_card["image"] = data_uri
+        # If the fetch failed, leave the original URL in place as a fallback —
+        # weasyprint will just try (and possibly fail) on that one image
+        # rather than the whole card losing its image reference entirely.
+        updated_cards.append(new_card)
+
+    return updated_cards
 
 
 def render_celtic_cross_pdf_html(question, cards, summary):
@@ -846,19 +896,12 @@ Write directly to the person in second person (you/your). Carry a tone of belong
 def tarot_celtic_cross_pdf():
     """Single-request PDF generation for the Celtic Cross spread.
 
-    NOTE: this used to be a two-step flow (a /prepare route that cached the
-    HTML behind a token, then a separate GET route to convert that cached
-    HTML into a PDF). That approach relied on an in-memory dict surviving
-    between two separate requests — but Render's free tier restarts the
-    process often enough (auto-sleep after inactivity, redeploys, etc.) that
-    the cache was frequently empty by the time the second request landed,
-    producing intermittent 404s / "expired link" errors with no clear pattern.
-
-    This version does everything in one request: build the HTML, render the
-    PDF with weasyprint, and return it base64-encoded in the same response.
-    No cache, no token, no second round-trip — so nothing can go stale
-    between steps. The tradeoff is a slightly heavier single request, but
-    that's a fair trade for reliability here.
+    Images are pre-fetched in parallel and embedded as base64 data URIs
+    BEFORE weasyprint ever touches the HTML. This is the fix for request
+    timeouts: weasyprint fetching 10 images itself, sequentially, over the
+    network was the main source of slowness. Doing it ourselves in parallel
+    (10 concurrent requests instead of 10 sequential ones) is dramatically
+    faster, and weasyprint's own work becomes purely local/CPU-bound.
     """
     try:
         data = request.get_json(force=True, silent=True) or {}
@@ -871,7 +914,9 @@ def tarot_celtic_cross_pdf():
         if not summary:
             return jsonify({"error": "summary is required"}), 400
 
-        html = render_celtic_cross_pdf_html(question, cards, summary)
+        cards_with_embedded_images = prefetch_card_images(cards)
+
+        html = render_celtic_cross_pdf_html(question, cards_with_embedded_images, summary)
         pdf_bytes = weasyprint.HTML(string=html).write_pdf()
         pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
 

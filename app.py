@@ -10,7 +10,7 @@ import weasyprint
 from io import BytesIO
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from flask import Flask, request, Response, jsonify
+from flask import Flask, request, Response, jsonify, send_file
 from kerykeion import AstrologicalSubjectFactory
 from kerykeion.chart_data_factory import ChartDataFactory
 from kerykeion.charts.chart_drawer import ChartDrawer
@@ -923,16 +923,25 @@ def debug_sleep():
     return jsonify({"slept_seconds": seconds, "status": "completed without timing out"})
 
 
+PDF_TEMP_DIR = "/tmp/celtic_cross_pdfs"
+os.makedirs(PDF_TEMP_DIR, exist_ok=True)
+
+
 @app.route("/tarot-celtic-cross-pdf", methods=["POST"])
 def tarot_celtic_cross_pdf():
     """Single-request PDF generation for the Celtic Cross spread.
 
-    Images are pre-fetched in parallel and embedded as base64 data URIs
-    BEFORE weasyprint ever touches the HTML. This is the fix for request
-    timeouts: weasyprint fetching 10 images itself, sequentially, over the
-    network was the main source of slowness. Doing it ourselves in parallel
-    (10 concurrent requests instead of 10 sequential ones) is dramatically
-    faster, and weasyprint's own work becomes purely local/CPU-bound.
+    This still generates everything in ONE request (no separate prepare/
+    download steps, avoiding the earlier in-memory-cache-goes-stale problem).
+    What changed: instead of returning the PDF as a base64 string, it's saved
+    to a temp file on disk and a real https:// download URL is returned.
+
+    Why: Wix's own link mechanism (both the button .link property AND
+    wixLocation.to()) only accepts standard schemes — http(s), mailto, tel —
+    and throws "UnsupportedLinkTypeError" for data: or blob: URIs. So handing
+    back raw base64 data was never going to work with a real Wix link/button,
+    regardless of how it was encoded on the JS side. A real URL sidesteps
+    that entirely.
     """
     try:
         data = request.get_json(force=True, silent=True) or {}
@@ -958,15 +967,41 @@ def tarot_celtic_cross_pdf():
         t3 = time.time()
         logger.info("Celtic Cross PDF: weasyprint render took %.2fs", t3 - t2)
 
-        pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
+        file_id = uuid.uuid4().hex[:16]
+        file_path = os.path.join(PDF_TEMP_DIR, f"{file_id}.pdf")
+        with open(file_path, "wb") as f:
+            f.write(pdf_bytes)
         t4 = time.time()
-        logger.info("Celtic Cross PDF: base64 encode took %.2fs (total %.2fs)", t4 - t3, t4 - t0)
+        logger.info("Celtic Cross PDF: file write took %.2fs (total %.2fs)", t4 - t3, t4 - t0)
 
-        return jsonify({"pdf_base64": pdf_base64})
+        pdf_url = f"/tarot-celtic-cross-pdf-file/{file_id}"
+        return jsonify({"pdf_url": pdf_url})
 
     except Exception as e:
         logger.exception(e)
         return jsonify({"error": "PDF generation failed", "detail": str(e)}), 500
+
+
+@app.route("/tarot-celtic-cross-pdf-file/<file_id>")
+def tarot_celtic_cross_pdf_file(file_id):
+    """Serves a previously generated Celtic Cross PDF from disk. file_id is
+    a random hex string generated in the route above — not user input used
+    for anything beyond building a filename, and it's checked against a
+    strict pattern below before touching the filesystem."""
+    if not re.fullmatch(r"[0-9a-f]{16}", file_id):
+        return jsonify({"error": "Invalid file id"}), 400
+
+    file_path = os.path.join(PDF_TEMP_DIR, f"{file_id}.pdf")
+
+    if not os.path.isfile(file_path):
+        return jsonify({"error": "This PDF is no longer available. Please draw your spread again."}), 404
+
+    return send_file(
+        file_path,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name="your-celtic-cross-journey.pdf"
+    )
 
 
 if __name__ == "__main__":

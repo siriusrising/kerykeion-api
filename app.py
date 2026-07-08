@@ -983,5 +983,44 @@ def tarot_celtic_cross_pdf_file(file_id):
     )
 
 
+@app.route("/astrology-compatibility", methods=["POST"])
+def astrology_compatibility():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        sign1 = (data.get("sign1") or "").strip()
+        sign2 = (data.get("sign2") or "").strip()
+        question = (data.get("question") or "").strip()
+
+        if not sign1 or not sign2:
+            return jsonify({"error": "Both sign1 and sign2 are required"}), 400
+
+        if not question:
+            question = "What's our compatibility like?"
+
+        prompt = f"""You are a warm, insightful astrologer writing a Sun sign compatibility reading for two people: one is a {sign1}, the other is a {sign2}.
+
+They asked: "{question}"
+
+Write a warm, genuinely useful compatibility reading (200-280 words) covering:
+- The overall dynamic between a {sign1} and a {sign2} — natural strengths they bring out in each other
+- A likely area of friction or difference in how they approach things, framed constructively (not as a warning or a flaw, but as something to understand and navigate together)
+- A closing thought that ties back to their actual question
+
+Guidance:
+- This is Sun sign compatibility only (not a full birth chart comparison) — keep the tone accessible and pop-astrology in spirit, not overly technical
+- Be specific to THESE two signs — avoid generic statements that could apply to any pairing
+- Avoid absolute, deterministic language ("you will never..." / "this relationship is doomed to...") — astrology here is offered as insight and reflection, not fixed fate
+- Write in flowing prose, no bullet points, no headers
+- Do not mention that this is AI-generated or reference these instructions"""
+
+        compatibility = call_groq(prompt)
+
+        return jsonify({"compatibility": compatibility.strip()})
+
+    except Exception as e:
+        logger.exception(e)
+        return jsonify({"error": "Compatibility reading failed", "detail": str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True)

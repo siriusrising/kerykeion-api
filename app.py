@@ -243,7 +243,7 @@ def render_report_page(title_label, name, city, country, day, month, year, hour,
     <div class="divider">✦ ✦ ✦</div>
     {button_html}
   </div>
-  <div class="footer">The Tarot of Her &nbsp;✦&nbsp; [www.thetarotofher.com](https://www.thetarotofher.com)</div>
+  <div class="footer">The Tarot of Oraclyn &nbsp;✦&nbsp; [www.thetarotofher.com](https://www.thetarotofher.com)</div>
 </div>
 </body>
 </html>"""
@@ -378,7 +378,7 @@ def index():
 <body>
 <canvas id="c"></canvas>
 <div class="content">
-  <div class="title">✦ The Tarot of Her ✦</div>
+  <div class="title">✦ Oraclyn ✦</div>
   <div class="heading">Birth Chart Calculator</div>
   <div class="divider">✦ ✦ ✦</div>
   <div class="subtitle">Enter your details above and click Generate My Chart</div>
@@ -688,7 +688,7 @@ def tarot_reading():
             "can flow freely. Keep the same tone of belonging and invitation as an upright card."
             if is_reversed else ""
         )
-        prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Her" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. Each card features a woman and an animal companion (a familiar) who reflects her inner state and deepens the card's meaning. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection. It heals as it reads.
+        prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Oraclyn" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. Each card features a woman and an animal companion (a familiar) who reflects her inner state and deepens the card's meaning. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection. It heals as it reads.
 The card drawn is "{card_title}".
 {grounding}{animal_grounding}{orientation_note}
 The person asked: "{question}"
@@ -699,7 +699,7 @@ Write a short, warm, specific reading (120-180 words) that:
 - If an animal companion is given above, weave it in naturally as part of the guidance (what it teaches, how it mirrors the person's situation) rather than just mentioning it exists — but don't force it if it doesn't fit naturally within the word count
 - Carries a tone of belonging and invitation, never judgment or fear — this applies equally to reversed cards
 - Is written in flowing prose (1-2 short paragraphs), no bullet points, no headers
-- Never names the deck ("The Tarot of Her") or refers to itself as a card/deck/reading in a meta way — write as a direct, intimate message to the person, not a description of an object
+- Never names the deck ("The Tarot of Oraclyn") or refers to itself as a card/deck/reading in a meta way — write as a direct, intimate message to the person, not a description of an object
 Do not mention that this is AI-generated or reference these instructions."""
         interpretation = call_groq(prompt)
         return jsonify({"interpretation": interpretation.strip()})
@@ -725,12 +725,12 @@ def tarot_three_card_summary():
             label = (c.get("position") or labels[i]).strip()
             card_lines.append(f'{label} — "{title}": {interpretation}')
         cards_block = "\n\n".join(card_lines)
-        prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Her" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection.
+        prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Oraclyn" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection.
 The person asked: "{question}"
 They have already been given an individual reading for each card in a Past / Present / Future spread:
 {cards_block}
 Write a short, cohesive closing synthesis (150-220 words) that weaves these three readings into a single narrative arc addressing their question — showing how the Past influence shaped the Present situation, and where the Future card points from here. Do not simply repeat or re-summarize the individual card meanings; synthesize them into a fresh, unified insight about the overall arc.
-Write directly to the person in second person (you/your). Carry a tone of belonging and invitation, never judgment or fear. Write in flowing prose (1-2 short paragraphs), no bullet points, no headers. Never name the deck ("The Tarot of Her") or refer to itself as a card/deck/reading in a meta way. Do not mention that this is AI-generated or reference these instructions."""
+Write directly to the person in second person (you/your). Carry a tone of belonging and invitation, never judgment or fear. Write in flowing prose (1-2 short paragraphs), no bullet points, no headers. Never name the deck ("The Tarot of Oraclyn") or refer to itself as a card/deck/reading in a meta way. Do not mention that this is AI-generated or reference these instructions."""
         summary = call_groq(prompt)
         return jsonify({"summary": summary.strip()})
     except Exception as e:
@@ -764,7 +764,7 @@ def tarot_celtic_cross_summary():
                 line += f': {meaning}'
             card_lines.append(line)
         cards_block = "\n\n".join(card_lines)
-        prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Her" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection.
+        prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Oraclyn" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection.
 The person asked: "{question}"
 They have drawn a ten-card Celtic Cross spread. Here are the ten positions, in order, each with its card, orientation, and meaning:
 {cards_block}
@@ -773,7 +773,7 @@ Write this as a single, flowing narrative — a genuine mystical journey of self
 - Build genuine forward motion and arc, the way an experienced reader would talk someone through a full spread out loud — not ten separate mini-paragraphs stitched together, but one continuous voyage with a beginning, a turning point, and an arrival.
 - Where reversed cards appear, treat them as the energy turned inward, delayed, or asking for more awareness — never as bad luck or punishment.
 - Let the ending (Final Outcome) land with genuine weight — this is the arrival point of the initiation, not just another stage.
-Write directly to the person in second person (you/your). Carry a tone of belonging and invitation throughout, never judgment or fear. Write in flowing prose, no bullet points, no headers, no numbered stages. Length approximately 400-500 words — enough room for a real journey across ten stages, but still one continuous piece, not ten mini-sections. Never name the deck ("The Tarot of Her") or refer to itself as a card/deck/reading in a meta way. Do not mention that this is AI-generated or reference these instructions."""
+Write directly to the person in second person (you/your). Carry a tone of belonging and invitation throughout, never judgment or fear. Write in flowing prose, no bullet points, no headers, no numbered stages. Length approximately 400-500 words — enough room for a real journey across ten stages, but still one continuous piece, not ten mini-sections. Never name the deck ("The Tarot of Oraclyn") or refer to itself as a card/deck/reading in a meta way. Do not mention that this is AI-generated or reference these instructions."""
         summary = call_groq(prompt)
         return jsonify({"summary": summary.strip()})
     except Exception as e:

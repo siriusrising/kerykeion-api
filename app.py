@@ -243,7 +243,7 @@ def render_report_page(title_label, name, city, country, day, month, year, hour,
     <div class="divider">✦ ✦ ✦</div>
     {button_html}
   </div>
-  <div class="footer">The Tarot of Oraclyn &nbsp;✦&nbsp; [www.thetarotofher.com](https://www.thetarotofher.com)</div>
+  <div class="footer">Oraclyn &nbsp;✦&nbsp; [www.oraclyn.fr](https://www.oraclyn.fr)</div>
 </div>
 </body>
 </html>"""
@@ -912,6 +912,109 @@ Write in second person (you/your). Carry a tone of belonging and invitation, nev
     except Exception as e:
         logger.exception(e)
         return jsonify({"error": "Card of the day reflection failed", "detail": str(e)}), 500
+
+@app.route("/synastry-reading", methods=["POST"])
+def synastry_reading():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+
+        name1 = (data.get("name1") or "Person A").strip()
+        year1 = int(data.get("year1"))
+        month1 = int(data.get("month1"))
+        day1 = int(data.get("day1"))
+        hour1 = int(data.get("hour1", 12))
+        minute1 = int(data.get("minute1", 0))
+        city1 = (data.get("city1") or "").strip()
+        country1 = (data.get("country1") or "").strip()
+
+        name2 = (data.get("name2") or "Person B").strip()
+        year2 = int(data.get("year2"))
+        month2 = int(data.get("month2"))
+        day2 = int(data.get("day2"))
+        hour2 = int(data.get("hour2", 12))
+        minute2 = int(data.get("minute2", 0))
+        city2 = (data.get("city2") or "").strip()
+        country2 = (data.get("country2") or "").strip()
+
+        if not all([city1, country1, city2, country2]):
+            return jsonify({"error": "Both people's city and country are required"}), 400
+
+        subject1 = build_subject(name1, year1, month1, day1, hour1, minute1, city1, country1)
+        subject2 = build_subject(name2, year2, month2, day2, hour2, minute2, city2, country2)
+
+        def extract_points(subject):
+            return {
+                "Sun": subject.sun.sign,
+                "Moon": subject.moon.sign,
+                "Mercury": subject.mercury.sign,
+                "Venus": subject.venus.sign,
+                "Mars": subject.mars.sign,
+                "Jupiter": subject.jupiter.sign,
+                "Saturn": subject.saturn.sign,
+                "Uranus": subject.uranus.sign,
+                "Neptune": subject.neptune.sign,
+                "Pluto": subject.pluto.sign,
+                "Ascendant": subject.first_house.sign,
+                "Chiron": subject.chiron.sign,
+                "Lilith": subject.mean_lilith.sign,
+                "North Node": subject.mean_north_lunar_node.sign,
+                "South Node": subject.mean_south_lunar_node.sign,
+                "Part of Fortune": subject.pars_fortunae.sign,
+            }
+
+        points1 = extract_points(subject1)
+        points2 = extract_points(subject2)
+
+        chart_lines_1 = "\n".join(f"- {k}: {v}" for k, v in points1.items())
+        chart_lines_2 = "\n".join(f"- {k}: {v}" for k, v in points2.items())
+
+        prompt = f"""You are an experienced, warm and insightful astrologer writing a full relationship compatibility (synastry) reading for two people.
+
+{name1}'s chart:
+{chart_lines_1}
+
+{name2}'s chart:
+{chart_lines_2}
+
+Structure your response using EXACTLY these section headings, in this exact order, each on its own line starting with "## " (two hash symbols and a space), with the section's writing directly beneath it. Do not add, remove, rename, or reorder headings. Do not use any other markdown (no bullet points, no bold, no numbered lists) — just plain flowing paragraphs under each heading:
+## Overview
+## Sun & Moon Dynamic
+## Venus & Mars: Attraction and Friction
+## Mercury: How You Communicate
+## Ascendant: First Impressions
+## Chiron: Shared Wounds, Shared Healing
+## Lilith: The Instinctual Undercurrent
+## The Lunar Nodes: Where This Connection Is Pulling You
+## Part of Fortune: Where Ease Flows Between You
+## Growth Edge
+## Closing Thought
+
+Guidance for each section:
+- Overview: a brief, engaging 2-3 sentence introduction to the overall energy between these two charts.
+- Sun & Moon Dynamic: how their core identities and emotional needs interact.
+- Venus & Mars: attraction, romantic style, and where friction might show up — framed constructively, not as a warning.
+- Mercury: how they talk to and understand each other.
+- Ascendant: how they come across to each other day-to-day.
+- Chiron: where their core wounds might mirror or trigger each other, and how facing this together can be healing rather than painful.
+- Lilith: the raw, instinctual, unfiltered parts of each person this connection brings out — described with curiosity, not judgment.
+- The Lunar Nodes: comparing North/South Node placements — what old patterns this relationship might surface, and what growth it's pointing toward for both people.
+- Part of Fortune: a short, warm note on where natural ease and good luck show up between them.
+- Growth Edge: one honest, constructive challenge area — an invitation, not a verdict.
+- Closing Thought: a warm, encouraging closing paragraph tying the themes together.
+
+Total length approximately 900-1200 words across all sections. Write directly about {name1} and {name2} by name (not just "you") so it reads as being about their specific connection. Be warm, insightful and specific — avoid generic statements that could apply to any pairing. Keep an emotionally intelligent, non-fatalistic tone throughout, especially for the Chiron/Lilith/Nodes sections — these are invitations, not verdicts. Avoid absolute, deterministic language ("you will never..." / "this relationship is doomed to...")."""
+
+        interpretation = call_groq(prompt)
+        html_content = format_sectioned_interpretation(interpretation)
+
+        return jsonify({
+            "interpretation_html": html_content,
+            "raw": interpretation.strip()
+        })
+
+    except Exception as e:
+        logger.exception(e)
+        return jsonify({"error": "Synastry reading failed", "detail": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)

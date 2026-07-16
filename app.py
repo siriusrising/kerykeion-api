@@ -23,20 +23,12 @@ app = Flask(__name__)
 GEONAMES_USERNAME = os.environ.get("GEONAMES_USERNAME", "siriusrising")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
-# Short-lived cache so the "Download as PDF" button reuses the exact same
-# generated HTML the person is already looking at, instead of firing a
-# second Groq call that could come back with slightly different wording.
-# NOTE: this in-memory cache is only used by the birth chart PDF flow below.
-# The Celtic Cross PDF route does NOT use this cache anymore — see the note
-# on that route for why (Render free-tier restarts were wiping tokens
-# between the prepare and download requests, causing intermittent 404s).
 REPORT_CACHE = {}
 CACHE_TTL_SECONDS = 3600
 
 def cache_store(token, html):
     now = time.time()
     REPORT_CACHE[token] = (now, html)
-    # light housekeeping: drop anything older than the TTL
     expired = [k for k, (ts, _) in REPORT_CACHE.items() if now - ts > CACHE_TTL_SECONDS]
     for k in expired:
         REPORT_CACHE.pop(k, None)
@@ -63,7 +55,6 @@ SIGN_NAMES = {
     "Sag": "Sagittarius", "Cap": "Capricorn", "Aqu": "Aquarius", "Pis": "Pisces",
 }
 
-# Symbols/colors for the modern & sensitive points shown on the new report page.
 MODERN_POINT_SYMBOLS = {
     "chiron":      ("⚷", "#8E44AD"),
     "lilith":      ("⚸", "#C0392B"),
@@ -72,9 +63,6 @@ MODERN_POINT_SYMBOLS = {
     "fortune":     ("⊗", "#D4AC0D"),
 }
 
-# Every point we ever need across all routes. Passing this consistently means
-# /chart-page will also *draw* Chiron, Lilith and the Nodes on the wheel, not
-# just the text reports.
 ACTIVE_POINTS = [
     "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn",
     "Uranus", "Neptune", "Pluto",
@@ -164,8 +152,6 @@ REPORT_STYLE = """
   }
 """
 
-# Extra styles specific to the Celtic Cross PDF (card grid + question callout).
-# Kept separate from REPORT_STYLE so the birth chart report is never affected.
 TAROT_PDF_STYLE = """
   .question-callout { text-align: center; font-style: italic; color: #8a6d3b; font-size: 16px; margin: 0 0 30px; padding: 18px; border-top: 1px solid rgba(201,169,110,0.35); border-bottom: 1px solid rgba(201,169,110,0.35); }
   .card-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; margin-bottom: 10px; }
@@ -175,6 +161,14 @@ TAROT_PDF_STYLE = """
   .tarot-card .position-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #8a6d3b; margin-top: 8px; }
   .tarot-card .card-title { font-size: 13px; font-style: italic; color: #333; margin-top: 2px; }
   .journey-heading { text-align: center; color: #8a6d3b; font-size: 20px; font-style: italic; margin: 40px 0 20px; }
+"""
+
+SYNASTRY_PDF_STYLE = """
+  .couple-names { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 18px; background: #0d1b2a; padding: 0 20px 30px; }
+  .couple-name-block { text-align: center; padding: 10px 16px; }
+  .couple-name { color: white; font-size: 20px; font-style: italic; }
+  .couple-meta { color: rgba(255,255,255,0.5); font-size: 11px; letter-spacing: 1px; margin-top: 4px; }
+  .couple-ampersand { color: #c9a96e; font-size: 22px; }
 """
 
 def safe_filename(name):
@@ -187,9 +181,6 @@ SECTION_HEADING_RE = re.compile(
 )
 
 def format_sectioned_interpretation(text):
-    """Turn Groq's '## Heading' formatted output into real <h2> sections.
-    Falls back to plain <p> paragraphs if the model didn't follow the
-    requested format, so a formatting slip never breaks the page."""
     text = text.strip()
     matches = SECTION_HEADING_RE.findall(text)
     if not matches:
@@ -243,21 +234,14 @@ def render_report_page(title_label, name, city, country, day, month, year, hour,
     <div class="divider">✦ ✦ ✦</div>
     {button_html}
   </div>
-  <div class="footer">Oraclyn &nbsp;✦&nbsp; [www.oraclyn.fr](https://www.oraclyn.fr)</div>
+  <div class="footer">Oraclyn &nbsp;✦&nbsp; www.oraclyn.fr</div>
 </div>
 </body>
 </html>"""
 
-MAX_PDF_IMAGE_WIDTH = 400  # px — plenty for a print-quality card thumbnail in the PDF
+MAX_PDF_IMAGE_WIDTH = 400
 
 def fetch_image_as_data_uri(url, timeout=8):
-    """Fetches an image, downsizes it, and returns it as a base64 data URI,
-    so weasyprint never has to make its own network request for it later.
-    Downsizing matters here: full-size deck art (often 1500px+) is much
-    bigger than a PDF thumbnail needs, and that extra size costs real time
-    both to fetch and for weasyprint to lay out and embed. Returns None on
-    any failure (bad URL, timeout, non-200, bad image data) rather than
-    raising — a single missing card image should never crash the whole PDF."""
     try:
         response = requests.get(url, timeout=timeout)
         if not response.ok:
@@ -278,12 +262,6 @@ def fetch_image_as_data_uri(url, timeout=8):
         return None
 
 def prefetch_card_images(cards):
-    """Fetches all card images in parallel and returns a new list of cards
-    with 'image' replaced by a base64 data URI wherever the fetch succeeded.
-    This is the key fix for PDF generation timing out: weasyprint fetching
-    10 images itself, one at a time, over the network was the main source of
-    request time. Doing it ourselves in parallel is dramatically faster, and
-    means weasyprint's own work becomes purely local/CPU-bound."""
     results = [None] * len(cards)
     with ThreadPoolExecutor(max_workers=10) as executor:
         future_to_index = {
@@ -298,16 +276,10 @@ def prefetch_card_images(cards):
         new_card = dict(card)
         if data_uri:
             new_card["image"] = data_uri
-        # If the fetch failed, leave the original URL in place as a fallback —
-        # weasyprint will just try (and possibly fail) on that one image
-        # rather than the whole card losing its image reference entirely.
         updated_cards.append(new_card)
     return updated_cards
 
 def render_celtic_cross_pdf_html(question, cards, summary):
-    """Builds the full HTML for a Celtic Cross keepsake PDF: the question,
-    a labeled grid of all 10 cards, and the journey summary underneath.
-    Uses a fixed seed for the starfield since there's no birth date here."""
     stars = stars_svg(7, 7, 2026)
     card_tiles = []
     for card in cards:
@@ -343,7 +315,7 @@ def render_celtic_cross_pdf_html(question, cards, summary):
     <div class="header-content">
       <div class="gold">✦ Celtic Cross Spread ✦</div>
       <h1>Your Journey</h1>
-      <div class="subtitle">Oraclyn &nbsp;·&nbsp; [www.oraclyn.fr](https://www.oraclyn.fr)</div>
+      <div class="subtitle">Oraclyn &nbsp;·&nbsp; www.oraclyn.fr</div>
     </div>
   </div>
   <div class="body">
@@ -354,7 +326,50 @@ def render_celtic_cross_pdf_html(question, cards, summary):
     <div class="journey-heading">✦ The Journey ✦</div>
     {summary_html}
   </div>
-  <div class="footer">Oraclyn &nbsp;✦&nbsp; [www.oraclyn.fr](https://www.oraclyn.fr)</div>
+  <div class="footer">Oraclyn &nbsp;✦&nbsp; www.oraclyn.fr</div>
+</div>
+</body>
+</html>"""
+
+def render_synastry_pdf_html(name1, city1, country1, name2, city2, country2, html_content):
+    stars = stars_svg(7, 7, 2026)
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Full Compatibility Report — {name1} &amp; {name2}</title>
+<style>{REPORT_STYLE}{SYNASTRY_PDF_STYLE}</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <svg viewBox="0 0 800 200" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      {stars}
+      <circle cx="720" cy="50" r="35" fill="#c9a96e" opacity="0.12"/>
+      <circle cx="735" cy="45" r="28" fill="#0d1b2a" opacity="1"/>
+    </svg>
+    <div class="header-content">
+      <div class="gold">✦ Full Compatibility Report ✦</div>
+      <h1>{name1} &amp; {name2}</h1>
+    </div>
+  </div>
+  <div class="couple-names">
+    <div class="couple-name-block">
+      <div class="couple-name">{name1}</div>
+      <div class="couple-meta">{city1}, {country1}</div>
+    </div>
+    <div class="couple-ampersand">✦</div>
+    <div class="couple-name-block">
+      <div class="couple-name">{name2}</div>
+      <div class="couple-meta">{city2}, {country2}</div>
+    </div>
+  </div>
+  <div class="body">
+    <div class="divider">✦ ✦ ✦</div>
+    {html_content}
+    <div class="divider">✦ ✦ ✦</div>
+  </div>
+  <div class="footer">Oraclyn &nbsp;✦&nbsp; www.oraclyn.fr</div>
 </div>
 </body>
 </html>"""
@@ -522,13 +537,17 @@ def build_interpretation_html(name, year, month, day, hour, minute, city, countr
     sun_name  = SIGN_NAMES.get(sun_code,  subject.sun.sign)
     moon_name = SIGN_NAMES.get(moon_code, subject.moon.sign)
     asc_name  = SIGN_NAMES.get(asc_code,  asc_sign)
+
     prompt = f"""You are an experienced, warm and insightful astrologer. Write a personalised birth chart interpretation for {name}, born on {day}/{month}/{year} at {hour:02d}:{minute:02d} in {city}, {country}.
+
 Their chart details:
 - Ascendant (Rising Sign): {asc_sign}
 - Midheaven (MC): {mc_sign}
 {planet_lines}
+
 Their modern & sensitive points:
 {modern_lines}
+
 Structure your response using EXACTLY these section headings, in this exact order, each on its own line starting with "## " (two hash symbols and a space), with the section's writing directly beneath it. Do not add, remove, rename, or reorder headings. Do not use any other markdown (no bullet points, no bold, no numbered lists) — just plain flowing paragraphs under each heading:
 ## Your Chart at a Glance
 ## Sun
@@ -540,6 +559,7 @@ Structure your response using EXACTLY these section headings, in this exact orde
 ## The Lunar Nodes
 ## Part of Fortune
 ## Your Path Forward
+
 Guidance for each section:
 - Your Chart at a Glance: a brief, engaging introduction to their overall chart energy (2-3 sentences).
 - Sun / Moon / Ascendant: what each reveals about their personality, emotions, and outer self — one focused paragraph each.
@@ -549,9 +569,12 @@ Guidance for each section:
 - The Lunar Nodes: the pull between old comfortable patterns (South Node) and the growth path this lifetime is asking for (North Node).
 - Part of Fortune: a short, warm note on where natural ease and good fortune show up for them.
 - Your Path Forward: a warm, encouraging closing paragraph about their life path, tying the themes together.
+
 Total length approximately 900-1200 words across all sections. Write directly to {name} in second person (you/your). Be warm, insightful and specific — avoid generic statements. Keep an emotionally intelligent, non-fatalistic tone for the Chiron/Lilith/Nodes sections — these are invitations, not verdicts."""
+
     interpretation = call_groq(prompt)
     html_content = format_sectioned_interpretation(interpretation)
+
     def modern_card(label, symbol_key, pobj):
         symbol, color = MODERN_POINT_SYMBOLS[symbol_key]
         sign_code = get_sign_code(pobj.sign)
@@ -564,6 +587,7 @@ Total length approximately 900-1200 words across all sections. Write directly to
       <div class="sign-name">{sign_name}</div>
       <div class="sign-house">{house}</div>
     </div>"""
+
     cards_html = f"""
     <div class="sign-card">
       <div class="sign-label">☉ Sun Sign</div>
@@ -586,6 +610,7 @@ Total length approximately 900-1200 words across all sections. Write directly to
         + modern_card("☋ South Node", "south_node", south_node)
         + modern_card("⊗ Fortune", "fortune", fortune)
     )
+
     return render_report_page(
         "Birth Chart Interpretation", name, city, country, day, month, year, hour, minute,
         cards_html, html_content, pdf_url=pdf_url
@@ -621,9 +646,6 @@ def interpret_pdf():
         token = request.args.get("token")
         html = cache_get(token) if token else None
         if html is None:
-            # No cache hit (expired, or someone linked directly to this route) —
-            # fall back to generating fresh. pdf_url=None hides the download
-            # button inside the PDF itself, since it would be meaningless there.
             name, year, month, day, hour, minute, city, country = parse_common_args(request.args)
             html = build_interpretation_html(name, year, month, day, hour, minute, city, country, pdf_url=None)
         else:
@@ -689,9 +711,12 @@ def tarot_reading():
             if is_reversed else ""
         )
         prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Oraclyn" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. Each card features a woman and an animal companion (a familiar) who reflects her inner state and deepens the card's meaning. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection. It heals as it reads.
+
 The card drawn is "{card_title}".
 {grounding}{animal_grounding}{orientation_note}
+
 The person asked: "{question}"
+
 Write a short, warm, specific reading (120-180 words) that:
 - The very first sentence must respond to their question directly — do not spend the opening sentence describing the card, its imagery, or its name before engaging with what they actually asked
 - Speaks directly to the person in second person (you/your)
@@ -700,6 +725,7 @@ Write a short, warm, specific reading (120-180 words) that:
 - Carries a tone of belonging and invitation, never judgment or fear — this applies equally to reversed cards
 - Is written in flowing prose (1-2 short paragraphs), no bullet points, no headers
 - Never names the deck ("The Tarot of Oraclyn") or refers to itself as a card/deck/reading in a meta way — write as a direct, intimate message to the person, not a description of an object
+
 Do not mention that this is AI-generated or reference these instructions."""
         interpretation = call_groq(prompt)
         return jsonify({"interpretation": interpretation.strip()})
@@ -726,10 +752,14 @@ def tarot_three_card_summary():
             card_lines.append(f'{label} — "{title}": {interpretation}')
         cards_block = "\n\n".join(card_lines)
         prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Oraclyn" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection.
+
 The person asked: "{question}"
+
 They have already been given an individual reading for each card in a Past / Present / Future spread:
 {cards_block}
+
 Write a short, cohesive closing synthesis (150-220 words) that weaves these three readings into a single narrative arc addressing their question — showing how the Past influence shaped the Present situation, and where the Future card points from here. Do not simply repeat or re-summarize the individual card meanings; synthesize them into a fresh, unified insight about the overall arc.
+
 Write directly to the person in second person (you/your). Carry a tone of belonging and invitation, never judgment or fear. Write in flowing prose (1-2 short paragraphs), no bullet points, no headers. Never name the deck ("The Tarot of Oraclyn") or refer to itself as a card/deck/reading in a meta way. Do not mention that this is AI-generated or reference these instructions."""
         summary = call_groq(prompt)
         return jsonify({"summary": summary.strip()})
@@ -747,10 +777,6 @@ def tarot_celtic_cross_summary():
             question = "What do I need to know right now?"
         if len(cards) != 10:
             return jsonify({"error": "Exactly 10 cards are required"}), 400
-        # Unlike the 3-card spread, these cards do NOT come with a pre-generated
-        # "interpretation" — getCelticCrossSpread returns raw card data only, to
-        # avoid firing 10 separate Groq calls per draw. So this prompt is built
-        # directly from each card's title/meaning/animal fields instead.
         card_lines = []
         for c in cards:
             position = (c.get("position") or "").strip()
@@ -765,14 +791,18 @@ def tarot_celtic_cross_summary():
             card_lines.append(line)
         cards_block = "\n\n".join(card_lines)
         prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Oraclyn" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection.
+
 The person asked: "{question}"
+
 They have drawn a ten-card Celtic Cross spread. Here are the ten positions, in order, each with its card, orientation, and meaning:
 {cards_block}
+
 Write this as a single, flowing narrative — a genuine mystical journey of self-discovery, almost an initiation — that moves through these ten positions in the order given, from Present through to the Final Outcome. Treat each position as a stage along this voyage rather than a disconnected fact to list:
 - Continually tie the narrative back to their actual question. Don't just describe each card in the abstract — show how each stage speaks to what they specifically asked.
 - Build genuine forward motion and arc, the way an experienced reader would talk someone through a full spread out loud — not ten separate mini-paragraphs stitched together, but one continuous voyage with a beginning, a turning point, and an arrival.
 - Where reversed cards appear, treat them as the energy turned inward, delayed, or asking for more awareness — never as bad luck or punishment.
 - Let the ending (Final Outcome) land with genuine weight — this is the arrival point of the initiation, not just another stage.
+
 Write directly to the person in second person (you/your). Carry a tone of belonging and invitation throughout, never judgment or fear. Write in flowing prose, no bullet points, no headers, no numbered stages. Length approximately 400-500 words — enough room for a real journey across ten stages, but still one continuous piece, not ten mini-sections. Never name the deck ("The Tarot of Oraclyn") or refer to itself as a card/deck/reading in a meta way. Do not mention that this is AI-generated or reference these instructions."""
         summary = call_groq(prompt)
         return jsonify({"summary": summary.strip()})
@@ -785,18 +815,6 @@ os.makedirs(PDF_TEMP_DIR, exist_ok=True)
 
 @app.route("/tarot-celtic-cross-pdf", methods=["POST"])
 def tarot_celtic_cross_pdf():
-    """Single-request PDF generation for the Celtic Cross spread.
-    This still generates everything in ONE request (no separate prepare/
-    download steps, avoiding the earlier in-memory-cache-goes-stale problem).
-    What changed: instead of returning the PDF as a base64 string, it's saved
-    to a temp file on disk and a real https:// download URL is returned.
-    Why: Wix's own link mechanism (both the button .link property AND
-    wixLocation.to()) only accepts standard schemes — http(s), mailto, tel —
-    and throws "UnsupportedLinkTypeError" for data: or blob: URIs. So handing
-    back raw base64 data was never going to work with a real Wix link/button,
-    regardless of how it was encoded on the JS side. A real URL sidesteps
-    that entirely.
-    """
     try:
         data = request.get_json(force=True, silent=True) or {}
         question = (data.get("question") or "").strip() or "What do I need to know right now?"
@@ -830,10 +848,6 @@ def tarot_celtic_cross_pdf():
 
 @app.route("/tarot-celtic-cross-pdf-file/<file_id>")
 def tarot_celtic_cross_pdf_file(file_id):
-    """Serves a previously generated Celtic Cross PDF from disk. file_id is
-    a random hex string generated in the route above — not user input used
-    for anything beyond building a filename, and it's checked against a
-    strict pattern below before touching the filesystem."""
     if not re.fullmatch(r"[0-9a-f]{16}", file_id):
         return jsonify({"error": "Invalid file id"}), 400
     file_path = os.path.join(PDF_TEMP_DIR, f"{file_id}.pdf")
@@ -858,11 +872,14 @@ def astrology_compatibility():
         if not question:
             question = "What's our compatibility like?"
         prompt = f"""You are a warm, insightful astrologer writing a Sun sign compatibility reading for two people: one is a {sign1}, the other is a {sign2}.
+
 They asked: "{question}"
+
 Write a warm, genuinely useful compatibility reading (200-280 words) covering:
 - The overall dynamic between a {sign1} and a {sign2} — natural strengths they bring out in each other
 - A likely area of friction or difference in how they approach things, framed constructively (not as a warning or a flaw, but as something to understand and navigate together)
 - A closing thought that ties back to their actual question
+
 Guidance:
 - This is Sun sign compatibility only (not a full birth chart comparison) — keep the tone accessible and pop-astrology in spirit, not overly technical
 - Be specific to THESE two signs — avoid generic statements that could apply to any pairing
@@ -884,16 +901,13 @@ def tarot_card_of_the_day():
         reversed_meaning = (data.get("reversed") or "").strip()
         animal = (data.get("animal") or "").strip()
         animal_meaning = (data.get("animalMeaning") or "").strip()
-
         if not title:
             return jsonify({"error": "title is required"}), 400
-
         animal_block = ""
         if animal:
             animal_block = f'\nHer animal companion on this card is the {animal}.'
             if animal_meaning:
                 animal_block += f' What the {animal} teaches: "{animal_meaning}"'
-
         prompt = f"""You are a warm, wise reader working with an original tarot deck called "Tarot of Oraclyn" — a deck that reimagines traditional tarot through a compassionate, non-hierarchical lens, replacing judgment and fear-based imagery with warmth and belonging. Each card features a woman and an animal companion (a familiar) who reflects her inner state and deepens the card's meaning.
 
 Today's card is "{title}".
@@ -906,7 +920,6 @@ Write a warm, grounded "Card of the Day" reflection (120-180 words) for someone 
 - Close with a gentle, non-alarming note drawing on the reversed meaning — framed as something to notice if the day feels resistant, not a warning
 
 Write in second person (you/your). Carry a tone of belonging and invitation, never judgment or fear. Never name the deck ("Tarot of Oraclyn") or refer to itself as a card/deck/reading in a meta way. Do not mention that this is AI-generated or reference these instructions."""
-
         reflection = call_groq(prompt)
         return jsonify({"reflection": reflection.strip()})
     except Exception as e:
@@ -1015,6 +1028,55 @@ Total length approximately 900-1200 words across all sections. Write directly ab
     except Exception as e:
         logger.exception(e)
         return jsonify({"error": "Synastry reading failed", "detail": str(e)}), 500
+
+SYNASTRY_PDF_TEMP_DIR = "/tmp/synastry_pdfs"
+os.makedirs(SYNASTRY_PDF_TEMP_DIR, exist_ok=True)
+
+@app.route("/synastry-pdf", methods=["POST"])
+def synastry_pdf():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+
+        name1 = (data.get("name1") or "Person A").strip()
+        city1 = (data.get("city1") or "").strip()
+        country1 = (data.get("country1") or "").strip()
+
+        name2 = (data.get("name2") or "Person B").strip()
+        city2 = (data.get("city2") or "").strip()
+        country2 = (data.get("country2") or "").strip()
+
+        html_content = (data.get("interpretation_html") or "").strip()
+        if not html_content:
+            return jsonify({"error": "interpretation_html is required"}), 400
+
+        html = render_synastry_pdf_html(name1, city1, country1, name2, city2, country2, html_content)
+        pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+
+        file_id = uuid.uuid4().hex[:16]
+        file_path = os.path.join(SYNASTRY_PDF_TEMP_DIR, f"{file_id}.pdf")
+        with open(file_path, "wb") as f:
+            f.write(pdf_bytes)
+
+        pdf_url = f"/synastry-pdf-file/{file_id}"
+        return jsonify({"pdf_url": pdf_url})
+
+    except Exception as e:
+        logger.exception(e)
+        return jsonify({"error": "PDF generation failed", "detail": str(e)}), 500
+
+@app.route("/synastry-pdf-file/<file_id>")
+def synastry_pdf_file(file_id):
+    if not re.fullmatch(r"[0-9a-f]{16}", file_id):
+        return jsonify({"error": "Invalid file id"}), 400
+    file_path = os.path.join(SYNASTRY_PDF_TEMP_DIR, f"{file_id}.pdf")
+    if not os.path.isfile(file_path):
+        return jsonify({"error": "This PDF is no longer available. Please generate your report again."}), 404
+    return send_file(
+        file_path,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name="full-compatibility-report.pdf"
+    )
 
 if __name__ == "__main__":
     app.run(debug=True)

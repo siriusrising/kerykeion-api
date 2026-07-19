@@ -571,7 +571,11 @@ Guidance for each section:
 - Part of Fortune: a short, warm note on where natural ease and good fortune show up for them.
 - Your Path Forward: a warm, encouraging closing paragraph about their life path, tying the themes together.
 
-Total length approximately 900-1200 words across all sections. Write directly to {name} in second person (you/your). Be warm, insightful and specific — avoid generic statements. Keep an emotionally intelligent, non-fatalistic tone for the Chiron/Lilith/Nodes sections — these are invitations, not verdicts."""
+Total length approximately 1000-1200 words across all sections. Write directly to {name} in second person (you/your). Be warm, insightful and specific — avoid generic statements that could apply to any month or any person. Avoid absolute, deterministic language ("you will definitely..." / "this will certainly happen") — astrology here is offered as insight and reflection, not fixed fate.
+
+Important accuracy note: you have only been given each planet's SIGN placement above — not exact degrees, houses for the transiting planets, or calculated aspects between them. Do NOT invent or name specific aspects (conjunct, square, trine, sextile, opposition, etc.) between a transiting planet and a natal planet, and do NOT state that a transiting planet is "in" a specific natal house — none of that has actually been calculated, and guessing at it risks being technically wrong. Instead, write impressionistically about how the transiting sign's energy interacts with the natal placement's sign and house (e.g., "Transiting Mercury's presence in Cancer brings a more intuitive tone to how you communicate, especially given your natal Mercury's home in thoughtful Capricorn") — evocative and specific to these two signs, without claiming a precise geometric relationship you weren't given."""
+
+    interpretation = call_groq(prompt)
 
     interpretation = call_groq(prompt)
     html_content = format_sectioned_interpretation(interpretation)

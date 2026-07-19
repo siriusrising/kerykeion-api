@@ -7,6 +7,7 @@ import base64
 import logging
 import requests
 import weasyprint
+from datetime import datetime
 from io import BytesIO
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1077,6 +1078,209 @@ def synastry_pdf_file(file_id):
         as_attachment=True,
         download_name="full-compatibility-report.pdf"
     )
+def build_transit_interpretation_html(name, year, month, day, hour, minute, city, country):
+    """Builds a monthly transit forecast: the person's fixed natal placements
+    compared against today's actual sky. Deliberately mirrors the synastry
+    route's approach (list each side's planet signs, let Groq do the
+    interpretive weaving) rather than computing precise aspect angles or
+    house-overlay transits — same low-risk, proven pattern already running
+    in production for the Full Compatibility Report.
 
+    Note: the "today's sky" subject reuses the person's birth city/country
+    purely to satisfy kerykeion's geonames requirement — planetary SIGN
+    positions are location-independent, so this doesn't affect accuracy.
+    Only house cusps would differ by location, and this route only reports
+    transiting planets by sign, not by house, so that's not a concern here."""
+    natal_subject = build_subject(name, year, month, day, hour, minute, city, country)
+
+    now = datetime.now()
+    transit_subject = build_subject(
+        "Current Sky", now.year, now.month, now.day, now.hour, now.minute, city, country
+    )
+
+    natal_planets = [
+        ("Sun", natal_subject.sun), ("Moon", natal_subject.moon), ("Mercury", natal_subject.mercury),
+        ("Venus", natal_subject.venus), ("Mars", natal_subject.mars), ("Jupiter", natal_subject.jupiter),
+        ("Saturn", natal_subject.saturn), ("Uranus", natal_subject.uranus),
+        ("Neptune", natal_subject.neptune), ("Pluto", natal_subject.pluto),
+    ]
+    natal_lines = "\n".join(
+        f"- {pname} in {pobj.sign} (House {getattr(pobj, 'house', '?')})"
+        for pname, pobj in natal_planets
+    )
+    natal_asc = natal_subject.first_house.sign
+
+    transit_planets = [
+        ("Sun", transit_subject.sun), ("Moon", transit_subject.moon), ("Mercury", transit_subject.mercury),
+        ("Venus", transit_subject.venus), ("Mars", transit_subject.mars), ("Jupiter", transit_subject.jupiter),
+        ("Saturn", transit_subject.saturn), ("Uranus", transit_subject.uranus),
+        ("Neptune", transit_subject.neptune), ("Pluto", transit_subject.pluto),
+    ]
+    transit_lines = "\n".join(
+        f"- Transiting {pname} in {pobj.sign}"
+        for pname, pobj in transit_planets
+    )
+
+    today_str = now.strftime("%d %B %Y")
+
+    prompt = f"""You are an experienced, warm and insightful astrologer writing a personalised monthly forecast for {name}, born on {day}/{month}/{year} at {hour:02d}:{minute:02d} in {city}, {country}. Today's date is {today_str}.
+
+{name}'s natal chart:
+- Ascendant (Rising Sign): {natal_asc}
+{natal_lines}
+
+Today's sky (current planetary positions):
+{transit_lines}
+
+Structure your response using EXACTLY these section headings, in this exact order, each on its own line starting with "## " (two hash symbols and a space), with the section's writing directly beneath it. Do not add, remove, rename, or reorder headings. Do not use any other markdown (no bullet points, no bold, no numbered lists) — just plain flowing paragraphs under each heading:
+## This Month's Energy
+## Major Influences
+## Love & Relationships
+## Career & Ambition
+## Growth & Challenges
+## What to Watch For
+## Closing Thought
+
+Guidance for each section:
+- This Month's Energy: a brief, engaging overview (2-3 sentences) of the overall mood this month brings for {name}, based on how today's sky interacts with their natal chart.
+- Major Influences: the most significant current planetary movements and what they mean specifically for {name}'s chart — weave in their natal placements, don't just describe the transits in the abstract.
+- Love & Relationships: what this period brings for {name}'s romantic and close relationships, grounded in their natal Venus/Mars and the current sky.
+- Career & Ambition: what this period brings for {name}'s work, ambitions and direction, grounded in their natal Saturn/Jupiter and the current sky.
+- Growth & Challenges: an honest, constructive look at where {name} might feel friction or be asked to grow this month — framed as an invitation, not a warning.
+- What to Watch For: a few specific, grounded pointers on timing or themes to notice in the coming weeks.
+- Closing Thought: a warm, encouraging closing paragraph tying the month together.
+
+Total length approximately 700-900 words across all sections. Write directly to {name} in second person (you/your). Be warm, insightful and specific — avoid generic statements that could apply to any month or any person. Avoid absolute, deterministic language ("you will definitely..." / "this will certainly happen") — astrology here is offered as insight and reflection, not fixed fate."""
+
+    interpretation = call_groq(prompt)
+    html_content = format_sectioned_interpretation(interpretation)
+    return html_content
+
+@app.route("/monthly-transit-reading", methods=["POST"])
+def monthly_transit_reading():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+
+        name = (data.get("name") or "Your").strip()
+        year = int(data.get("year"))
+        month = int(data.get("month"))
+        day = int(data.get("day"))
+        hour = int(data.get("hour", 12))
+        minute = int(data.get("minute", 0))
+        city = (data.get("city") or "").strip()
+        country = (data.get("country") or "").strip()
+
+        if not city or not country:
+            return jsonify({"error": "City and country are required"}), 400
+
+        html_content = build_transit_interpretation_html(name, year, month, day, hour, minute, city, country)
+
+        return jsonify({
+            "interpretation_html": html_content
+        })
+
+    except Exception as e:
+        logger.exception(e)
+        return jsonify({"error": "Monthly transit reading failed", "detail": str(e)}), 500
+
+# Extra styles specific to the Monthly Transit Forecast PDF (simple
+# name/location sub-header, no couple layout needed). Kept separate from
+# REPORT_STYLE for the same reason as the other per-report style blocks.
+TRANSIT_PDF_STYLE = """
+  .transit-header-name { text-align: center; padding: 0 20px 30px; background: #0d1b2a; }
+  .transit-meta { color: rgba(255,255,255,0.5); font-size: 11px; letter-spacing: 1px; margin-top: 6px; }
+"""
+
+def render_transit_pdf_html(name, city, country, html_content):
+    """Builds the full HTML for a Monthly Transit Forecast keepsake PDF.
+    Takes the interpretation_html already generated by /monthly-transit-reading
+    (passed straight through, not regenerated here) so the PDF always matches
+    exactly what the person saw on-screen and no second Groq call is made."""
+    stars = stars_svg(7, 7, 2026)
+    today_str = datetime.now().strftime("%d %B %Y")
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Monthly Transit Forecast — {name}</title>
+<style>{REPORT_STYLE}{TRANSIT_PDF_STYLE}</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <svg viewBox="0 0 800 200" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      {stars}
+      <circle cx="720" cy="50" r="35" fill="#c9a96e" opacity="0.12"/>
+      <circle cx="735" cy="45" r="28" fill="#0d1b2a" opacity="1"/>
+    </svg>
+    <div class="header-content">
+      <div class="gold">✦ Monthly Transit Forecast ✦</div>
+      <h1>{name}</h1>
+    </div>
+  </div>
+  <div class="transit-header-name">
+    <div class="transit-meta">{city}, {country} &nbsp;·&nbsp; Generated {today_str}</div>
+  </div>
+  <div class="body">
+    <div class="divider">✦ ✦ ✦</div>
+    {html_content}
+    <div class="divider">✦ ✦ ✦</div>
+  </div>
+  <div class="footer">Oraclyn &nbsp;✦&nbsp; [www.oraclyn.fr](https://www.oraclyn.fr)</div>
+</div>
+</body>
+</html>"""
+
+MONTHLY_TRANSIT_PDF_TEMP_DIR = "/tmp/monthly_transit_pdfs"
+os.makedirs(MONTHLY_TRANSIT_PDF_TEMP_DIR, exist_ok=True)
+
+@app.route("/monthly-transit-pdf", methods=["POST"])
+def monthly_transit_pdf():
+    """Single-request PDF generation for the Monthly Transit Forecast.
+    Same disk-file + real https:// URL pattern as the synastry PDF route,
+    for the same reason: Wix's link mechanism only accepts http(s)/mailto/tel,
+    not data:/blob: URIs."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+
+        name = (data.get("name") or "Your").strip()
+        city = (data.get("city") or "").strip()
+        country = (data.get("country") or "").strip()
+        html_content = (data.get("interpretation_html") or "").strip()
+
+        if not html_content:
+            return jsonify({"error": "interpretation_html is required"}), 400
+
+        html = render_transit_pdf_html(name, city, country, html_content)
+        pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+
+        file_id = uuid.uuid4().hex[:16]
+        file_path = os.path.join(MONTHLY_TRANSIT_PDF_TEMP_DIR, f"{file_id}.pdf")
+        with open(file_path, "wb") as f:
+            f.write(pdf_bytes)
+
+        pdf_url = f"/monthly-transit-pdf-file/{file_id}"
+        return jsonify({"pdf_url": pdf_url})
+
+    except Exception as e:
+        logger.exception(e)
+        return jsonify({"error": "PDF generation failed", "detail": str(e)}), 500
+
+@app.route("/monthly-transit-pdf-file/<file_id>")
+def monthly_transit_pdf_file(file_id):
+    """Serves a previously generated Monthly Transit Forecast PDF from disk.
+    file_id is a random hex string generated in the route above — checked
+    against a strict pattern below before touching the filesystem."""
+    if not re.fullmatch(r"[0-9a-f]{16}", file_id):
+        return jsonify({"error": "Invalid file id"}), 400
+    file_path = os.path.join(MONTHLY_TRANSIT_PDF_TEMP_DIR, f"{file_id}.pdf")
+    if not os.path.isfile(file_path):
+        return jsonify({"error": "This PDF is no longer available. Please generate your forecast again."}), 404
+    return send_file(
+        file_path,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name="monthly-transit-forecast.pdf"
+    )
 if __name__ == "__main__":
     app.run(debug=True)

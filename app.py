@@ -98,7 +98,7 @@ def call_groq(prompt):
         json={
             "model": "llama-3.1-8b-instant",
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 2000,
+            "max_tokens": 2600,
             "temperature": 0.8
         },
         timeout=30
@@ -1223,16 +1223,16 @@ Structure your response using EXACTLY these section headings, in this exact orde
 ## What to Watch For
 ## Closing Thought
 
-Guidance for each section:
-- This Month's Energy: a brief, engaging overview (2-3 sentences) of the overall mood this month brings for {name}, based on how today's sky interacts with their natal chart.
-- Major Influences: the most significant current planetary movements and what they mean specifically for {name}'s chart — weave in their natal placements, don't just describe the transits in the abstract.
-- Love & Relationships: what this period brings for {name}'s romantic and close relationships, grounded in their natal Venus/Mars and the current sky.
-- Career & Ambition: what this period brings for {name}'s work, ambitions and direction, grounded in their natal Saturn/Jupiter and the current sky.
-- Growth & Challenges: an honest, constructive look at where {name} might feel friction or be asked to grow this month — framed as an invitation, not a warning.
-- What to Watch For: a few specific, grounded pointers on timing or themes to notice in the coming weeks.
-- Closing Thought: a warm, encouraging closing paragraph tying the month together.
+Guidance for each section (word counts are minimums — treat them as a floor, not a target to stop at):
+- This Month's Energy (130-160 words): an engaging overview of the overall mood this month brings for {name}, based on how today's sky interacts with their natal chart.
+- Major Influences (180-220 words): the most significant current planetary movements and what they mean specifically for {name}'s chart — weave in their natal placements, don't just describe the transits in the abstract. Cover more than one planetary influence here in real depth.
+- Love & Relationships (150-180 words): what this period brings for {name}'s romantic and close relationships, grounded in their natal Venus/Mars and the current sky.
+- Career & Ambition (150-180 words): what this period brings for {name}'s work, ambitions and direction, grounded in their natal Saturn/Jupiter and the current sky.
+- Growth & Challenges (150-180 words): an honest, constructive look at where {name} might feel friction or be asked to grow this month — framed as an invitation, not a warning.
+- What to Watch For (150-180 words): a few specific, grounded pointers on timing or themes to notice in the coming weeks.
+- Closing Thought (100-130 words): this must stay grounded in astrology, NOT generic motivational language. Explicitly name and briefly re-tie together 2-3 of the specific placements or themes already covered above (name the actual planets/signs) into one cohesive final takeaway for the month. Do not use vague uplift phrases like "you've got this," "trust the universe," "you're a shining star," or similar generic encouragement — every sentence in this section should still be doing real astrological work, not just cheerleading.
 
-Total length approximately 1000-1200 words across all sections. Write directly to {name} in second person (you/your). Be warm, insightful and specific — avoid generic statements that could apply to any month or any person. Avoid absolute, deterministic language ("you will definitely..." / "this will certainly happen") — astrology here is offered as insight and reflection, not fixed fate.
+Total length approximately 1100-1300 words across all sections — treat this as a minimum to reach, not a ceiling; err on the side of writing more rather than less within each section. Write directly to {name} in second person (you/your). Be warm, insightful and specific — avoid generic statements that could apply to any month or any person. Avoid absolute, deterministic language ("you will definitely..." / "this will certainly happen") — astrology here is offered as insight and reflection, not fixed fate.
 
 Important accuracy note: you have only been given each planet's SIGN placement above — not exact degrees, houses for the transiting planets, or calculated aspects between them. Do NOT invent or name specific aspects (conjunct, square, trine, sextile, opposition, etc.) between a transiting planet and a natal planet, and do NOT state that a transiting planet is "in" a specific natal house — none of that has actually been calculated, and guessing at it risks being technically wrong. Instead, write impressionistically about how the transiting sign's energy interacts with the natal placement's sign and house (e.g., "Transiting Mercury's presence in Cancer brings a more intuitive tone to how you communicate, especially given your natal Mercury's home in thoughtful Capricorn") — evocative and specific to these two signs, without claiming a precise geometric relationship you weren't given."""
 

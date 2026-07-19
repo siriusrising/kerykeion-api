@@ -24,12 +24,20 @@ app = Flask(__name__)
 GEONAMES_USERNAME = os.environ.get("GEONAMES_USERNAME", "siriusrising")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
+# Short-lived cache so the "Download as PDF" button reuses the exact same
+# generated HTML the person is already looking at, instead of firing a
+# second Groq call that could come back with slightly different wording.
+# NOTE: this in-memory cache is only used by the birth chart PDF flow below.
+# The Celtic Cross PDF route does NOT use this cache anymore — see the note
+# on that route for why (Render free-tier restarts were wiping tokens
+# between the prepare and download requests, causing intermittent 404s).
 REPORT_CACHE = {}
 CACHE_TTL_SECONDS = 3600
 
 def cache_store(token, html):
     now = time.time()
     REPORT_CACHE[token] = (now, html)
+    # light housekeeping: drop anything older than the TTL
     expired = [k for k, (ts, _) in REPORT_CACHE.items() if now - ts > CACHE_TTL_SECONDS]
     for k in expired:
         REPORT_CACHE.pop(k, None)
@@ -56,6 +64,7 @@ SIGN_NAMES = {
     "Sag": "Sagittarius", "Cap": "Capricorn", "Aqu": "Aquarius", "Pis": "Pisces",
 }
 
+# Symbols/colors for the modern & sensitive points shown on the new report page.
 MODERN_POINT_SYMBOLS = {
     "chiron":      ("⚷", "#8E44AD"),
     "lilith":      ("⚸", "#C0392B"),
@@ -64,6 +73,9 @@ MODERN_POINT_SYMBOLS = {
     "fortune":     ("⊗", "#D4AC0D"),
 }
 
+# Every point we ever need across all routes. Passing this consistently means
+# /chart-page will also *draw* Chiron, Lilith and the Nodes on the wheel, not
+# just the text reports.
 ACTIVE_POINTS = [
     "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn",
     "Uranus", "Neptune", "Pluto",
@@ -153,6 +165,8 @@ REPORT_STYLE = """
   }
 """
 
+# Extra styles specific to the Celtic Cross PDF (card grid + question callout).
+# Kept separate from REPORT_STYLE so the birth chart report is never affected.
 TAROT_PDF_STYLE = """
   .question-callout { text-align: center; font-style: italic; color: #8a6d3b; font-size: 16px; margin: 0 0 30px; padding: 18px; border-top: 1px solid rgba(201,169,110,0.35); border-bottom: 1px solid rgba(201,169,110,0.35); }
   .card-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; margin-bottom: 10px; }
@@ -164,6 +178,9 @@ TAROT_PDF_STYLE = """
   .journey-heading { text-align: center; color: #8a6d3b; font-size: 20px; font-style: italic; margin: 40px 0 20px; }
 """
 
+# Extra styles specific to the Full Compatibility Report PDF (two-person
+# header block). Kept separate from REPORT_STYLE for the same reason as
+# TAROT_PDF_STYLE above — isolate per-report styling.
 SYNASTRY_PDF_STYLE = """
   .couple-names { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 18px; background: #0d1b2a; padding: 0 20px 30px; }
   .couple-name-block { text-align: center; padding: 10px 16px; }
@@ -182,6 +199,9 @@ SECTION_HEADING_RE = re.compile(
 )
 
 def format_sectioned_interpretation(text):
+    """Turn Groq's '## Heading' formatted output into real <h2> sections.
+    Falls back to plain <p> paragraphs if the model didn't follow the
+    requested format, so a formatting slip never breaks the page."""
     text = text.strip()
     matches = SECTION_HEADING_RE.findall(text)
     if not matches:
@@ -235,14 +255,21 @@ def render_report_page(title_label, name, city, country, day, month, year, hour,
     <div class="divider">✦ ✦ ✦</div>
     {button_html}
   </div>
-  <div class="footer">Oraclyn &nbsp;✦&nbsp; www.oraclyn.fr</div>
+  <div class="footer">Oraclyn &nbsp;✦&nbsp; [www.oraclyn.fr](https://www.oraclyn.fr)</div>
 </div>
 </body>
 </html>"""
 
-MAX_PDF_IMAGE_WIDTH = 400
+MAX_PDF_IMAGE_WIDTH = 400  # px — plenty for a print-quality card thumbnail in the PDF
 
 def fetch_image_as_data_uri(url, timeout=8):
+    """Fetches an image, downsizes it, and returns it as a base64 data URI,
+    so weasyprint never has to make its own network request for it later.
+    Downsizing matters here: full-size deck art (often 1500px+) is much
+    bigger than a PDF thumbnail needs, and that extra size costs real time
+    both to fetch and for weasyprint to lay out and embed. Returns None on
+    any failure (bad URL, timeout, non-200, bad image data) rather than
+    raising — a single missing card image should never crash the whole PDF."""
     try:
         response = requests.get(url, timeout=timeout)
         if not response.ok:
@@ -263,6 +290,12 @@ def fetch_image_as_data_uri(url, timeout=8):
         return None
 
 def prefetch_card_images(cards):
+    """Fetches all card images in parallel and returns a new list of cards
+    with 'image' replaced by a base64 data URI wherever the fetch succeeded.
+    This is the key fix for PDF generation timing out: weasyprint fetching
+    10 images itself, one at a time, over the network was the main source of
+    request time. Doing it ourselves in parallel is dramatically faster, and
+    means weasyprint's own work becomes purely local/CPU-bound."""
     results = [None] * len(cards)
     with ThreadPoolExecutor(max_workers=10) as executor:
         future_to_index = {
@@ -277,10 +310,16 @@ def prefetch_card_images(cards):
         new_card = dict(card)
         if data_uri:
             new_card["image"] = data_uri
+        # If the fetch failed, leave the original URL in place as a fallback —
+        # weasyprint will just try (and possibly fail) on that one image
+        # rather than the whole card losing its image reference entirely.
         updated_cards.append(new_card)
     return updated_cards
 
 def render_celtic_cross_pdf_html(question, cards, summary):
+    """Builds the full HTML for a Celtic Cross keepsake PDF: the question,
+    a labeled grid of all 10 cards, and the journey summary underneath.
+    Uses a fixed seed for the starfield since there's no birth date here."""
     stars = stars_svg(7, 7, 2026)
     card_tiles = []
     for card in cards:
@@ -316,7 +355,7 @@ def render_celtic_cross_pdf_html(question, cards, summary):
     <div class="header-content">
       <div class="gold">✦ Celtic Cross Spread ✦</div>
       <h1>Your Journey</h1>
-      <div class="subtitle">Oraclyn &nbsp;·&nbsp; www.oraclyn.fr</div>
+      <div class="subtitle">Oraclyn &nbsp;·&nbsp; [www.oraclyn.fr](https://www.oraclyn.fr)</div>
     </div>
   </div>
   <div class="body">
@@ -327,12 +366,18 @@ def render_celtic_cross_pdf_html(question, cards, summary):
     <div class="journey-heading">✦ The Journey ✦</div>
     {summary_html}
   </div>
-  <div class="footer">Oraclyn &nbsp;✦&nbsp; www.oraclyn.fr</div>
+  <div class="footer">Oraclyn &nbsp;✦&nbsp; [www.oraclyn.fr](https://www.oraclyn.fr)</div>
 </div>
 </body>
 </html>"""
 
 def render_synastry_pdf_html(name1, city1, country1, name2, city2, country2, html_content):
+    """Builds the full HTML for a Full Compatibility Report keepsake PDF.
+    Takes the interpretation_html already generated by /synastry-reading
+    (passed straight through from the page, not regenerated here) so the
+    PDF always matches exactly what the person already saw on-screen, and
+    so this never fires a second, differently-worded Groq call. Uses a
+    fixed starfield seed since two birth dates don't map cleanly to one."""
     stars = stars_svg(7, 7, 2026)
     return f"""<!DOCTYPE html>
 <html>
@@ -370,7 +415,7 @@ def render_synastry_pdf_html(name1, city1, country1, name2, city2, country2, htm
     {html_content}
     <div class="divider">✦ ✦ ✦</div>
   </div>
-  <div class="footer">Oraclyn &nbsp;✦&nbsp; www.oraclyn.fr</div>
+  <div class="footer">Oraclyn &nbsp;✦&nbsp; [www.oraclyn.fr](https://www.oraclyn.fr)</div>
 </div>
 </body>
 </html>"""
@@ -571,11 +616,7 @@ Guidance for each section:
 - Part of Fortune: a short, warm note on where natural ease and good fortune show up for them.
 - Your Path Forward: a warm, encouraging closing paragraph about their life path, tying the themes together.
 
-Total length approximately 1000-1200 words across all sections. Write directly to {name} in second person (you/your). Be warm, insightful and specific — avoid generic statements that could apply to any month or any person. Avoid absolute, deterministic language ("you will definitely..." / "this will certainly happen") — astrology here is offered as insight and reflection, not fixed fate.
-
-Important accuracy note: you have only been given each planet's SIGN placement above — not exact degrees, houses for the transiting planets, or calculated aspects between them. Do NOT invent or name specific aspects (conjunct, square, trine, sextile, opposition, etc.) between a transiting planet and a natal planet, and do NOT state that a transiting planet is "in" a specific natal house — none of that has actually been calculated, and guessing at it risks being technically wrong. Instead, write impressionistically about how the transiting sign's energy interacts with the natal placement's sign and house (e.g., "Transiting Mercury's presence in Cancer brings a more intuitive tone to how you communicate, especially given your natal Mercury's home in thoughtful Capricorn") — evocative and specific to these two signs, without claiming a precise geometric relationship you weren't given."""
-
-    interpretation = call_groq(prompt)
+Total length approximately 900-1200 words across all sections. Write directly to {name} in second person (you/your). Be warm, insightful and specific — avoid generic statements. Keep an emotionally intelligent, non-fatalistic tone for the Chiron/Lilith/Nodes sections — these are invitations, not verdicts."""
 
     interpretation = call_groq(prompt)
     html_content = format_sectioned_interpretation(interpretation)
@@ -651,6 +692,9 @@ def interpret_pdf():
         token = request.args.get("token")
         html = cache_get(token) if token else None
         if html is None:
+            # No cache hit (expired, or someone linked directly to this route) —
+            # fall back to generating fresh. pdf_url=None hides the download
+            # button inside the PDF itself, since it would be meaningless there.
             name, year, month, day, hour, minute, city, country = parse_common_args(request.args)
             html = build_interpretation_html(name, year, month, day, hour, minute, city, country, pdf_url=None)
         else:
@@ -782,6 +826,10 @@ def tarot_celtic_cross_summary():
             question = "What do I need to know right now?"
         if len(cards) != 10:
             return jsonify({"error": "Exactly 10 cards are required"}), 400
+        # Unlike the 3-card spread, these cards do NOT come with a pre-generated
+        # "interpretation" — getCelticCrossSpread returns raw card data only, to
+        # avoid firing 10 separate Groq calls per draw. So this prompt is built
+        # directly from each card's title/meaning/animal fields instead.
         card_lines = []
         for c in cards:
             position = (c.get("position") or "").strip()
@@ -820,6 +868,18 @@ os.makedirs(PDF_TEMP_DIR, exist_ok=True)
 
 @app.route("/tarot-celtic-cross-pdf", methods=["POST"])
 def tarot_celtic_cross_pdf():
+    """Single-request PDF generation for the Celtic Cross spread.
+    This still generates everything in ONE request (no separate prepare/
+    download steps, avoiding the earlier in-memory-cache-goes-stale problem).
+    What changed: instead of returning the PDF as a base64 string, it's saved
+    to a temp file on disk and a real https:// download URL is returned.
+    Why: Wix's own link mechanism (both the button .link property AND
+    wixLocation.to()) only accepts standard schemes — http(s), mailto, tel —
+    and throws "UnsupportedLinkTypeError" for data: or blob: URIs. So handing
+    back raw base64 data was never going to work with a real Wix link/button,
+    regardless of how it was encoded on the JS side. A real URL sidesteps
+    that entirely.
+    """
     try:
         data = request.get_json(force=True, silent=True) or {}
         question = (data.get("question") or "").strip() or "What do I need to know right now?"
@@ -853,6 +913,10 @@ def tarot_celtic_cross_pdf():
 
 @app.route("/tarot-celtic-cross-pdf-file/<file_id>")
 def tarot_celtic_cross_pdf_file(file_id):
+    """Serves a previously generated Celtic Cross PDF from disk. file_id is
+    a random hex string generated in the route above — not user input used
+    for anything beyond building a filename, and it's checked against a
+    strict pattern below before touching the filesystem."""
     if not re.fullmatch(r"[0-9a-f]{16}", file_id):
         return jsonify({"error": "Invalid file id"}), 400
     file_path = os.path.join(PDF_TEMP_DIR, f"{file_id}.pdf")
@@ -1039,6 +1103,16 @@ os.makedirs(SYNASTRY_PDF_TEMP_DIR, exist_ok=True)
 
 @app.route("/synastry-pdf", methods=["POST"])
 def synastry_pdf():
+    """Single-request PDF generation for the Full Compatibility Report.
+    Takes the interpretation_html the page already generated via
+    /synastry-reading and passes it straight through — this route never
+    calls Groq itself, so the PDF always matches exactly what the visitor
+    saw on screen, and no extra AI cost is incurred per download.
+    Same disk-file + real https:// URL pattern as the Celtic Cross PDF,
+    for the same reason: Wix's own link mechanism (button .link property
+    and wixLocation.to()) only accepts http(s)/mailto/tel — not data: or
+    blob: URIs.
+    """
     try:
         data = request.get_json(force=True, silent=True) or {}
 
@@ -1071,6 +1145,9 @@ def synastry_pdf():
 
 @app.route("/synastry-pdf-file/<file_id>")
 def synastry_pdf_file(file_id):
+    """Serves a previously generated Full Compatibility Report PDF from disk.
+    file_id is a random hex string generated in the route above — checked
+    against a strict pattern below before touching the filesystem."""
     if not re.fullmatch(r"[0-9a-f]{16}", file_id):
         return jsonify({"error": "Invalid file id"}), 400
     file_path = os.path.join(SYNASTRY_PDF_TEMP_DIR, f"{file_id}.pdf")
@@ -1082,6 +1159,7 @@ def synastry_pdf_file(file_id):
         as_attachment=True,
         download_name="full-compatibility-report.pdf"
     )
+
 def build_transit_interpretation_html(name, year, month, day, hour, minute, city, country):
     """Builds a monthly transit forecast: the person's fixed natal placements
     compared against today's actual sky. Deliberately mirrors the synastry
@@ -1154,7 +1232,9 @@ Guidance for each section:
 - What to Watch For: a few specific, grounded pointers on timing or themes to notice in the coming weeks.
 - Closing Thought: a warm, encouraging closing paragraph tying the month together.
 
-Total length approximately 700-900 words across all sections. Write directly to {name} in second person (you/your). Be warm, insightful and specific — avoid generic statements that could apply to any month or any person. Avoid absolute, deterministic language ("you will definitely..." / "this will certainly happen") — astrology here is offered as insight and reflection, not fixed fate."""
+Total length approximately 1000-1200 words across all sections. Write directly to {name} in second person (you/your). Be warm, insightful and specific — avoid generic statements that could apply to any month or any person. Avoid absolute, deterministic language ("you will definitely..." / "this will certainly happen") — astrology here is offered as insight and reflection, not fixed fate.
+
+Important accuracy note: you have only been given each planet's SIGN placement above — not exact degrees, houses for the transiting planets, or calculated aspects between them. Do NOT invent or name specific aspects (conjunct, square, trine, sextile, opposition, etc.) between a transiting planet and a natal planet, and do NOT state that a transiting planet is "in" a specific natal house — none of that has actually been calculated, and guessing at it risks being technically wrong. Instead, write impressionistically about how the transiting sign's energy interacts with the natal placement's sign and house (e.g., "Transiting Mercury's presence in Cancer brings a more intuitive tone to how you communicate, especially given your natal Mercury's home in thoughtful Capricorn") — evocative and specific to these two signs, without claiming a precise geometric relationship you weren't given."""
 
     interpretation = call_groq(prompt)
     html_content = format_sectioned_interpretation(interpretation)
@@ -1286,5 +1366,6 @@ def monthly_transit_pdf_file(file_id):
         as_attachment=True,
         download_name="monthly-transit-forecast.pdf"
     )
+
 if __name__ == "__main__":
     app.run(debug=True)

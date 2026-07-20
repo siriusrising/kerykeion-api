@@ -1238,7 +1238,12 @@ Important accuracy note: you have only been given each planet's SIGN placement a
 
     interpretation = call_groq(prompt)
     html_content = format_sectioned_interpretation(interpretation)
-    return html_content
+    meta_line = (
+        f'<p style="text-align:center; font-style:italic; color:#8a6d3b; '
+        f'font-size:13px; letter-spacing:0.5px; margin-bottom:30px;">'
+        f'✦ Forecast generated {today_str} — your outlook for the next 30 days ahead ✦</p>'
+    )
+    return meta_line + html_content
 
 @app.route("/monthly-transit-reading", methods=["POST"])
 def monthly_transit_reading():
@@ -1450,7 +1455,12 @@ Important accuracy note: you have only been given each planet's SIGN placement a
 
     interpretation = call_groq(prompt)
     html_content = format_sectioned_interpretation(interpretation)
-    return html_content
+    meta_line = (
+        f'<p style="text-align:center; font-style:italic; color:#8a6d3b; '
+        f'font-size:13px; letter-spacing:0.5px; margin-bottom:30px;">'
+        f'✦ Forecast generated {today_str} — your outlook for the next 30 days ahead ✦</p>'
+    )
+    return meta_line + html_content
 
 @app.route("/relationship-transit-reading", methods=["POST"])
 def relationship_transit_reading():

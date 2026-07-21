@@ -7,7 +7,7 @@ import base64
 import logging
 import requests
 import weasyprint
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1615,6 +1615,141 @@ def relationship_transit_pdf_file(file_id):
         as_attachment=True,
         download_name="relationship-transit-forecast.pdf"
     )
+
+# --- Mercury Retrograde Right Now ---
+# A free, always-current content page (no birth data needed). Unlike the
+# personal forecasts above, this reports on the actual sky only, so it uses
+# a fixed reference location with online=False (no geonames lookup) — a
+# planet's retrograde status and sign are location-independent, so this is
+# both faster and doesn't depend on the geonames API being up.
+MERCURY_RETRO_REF_LAT = 51.5074
+MERCURY_RETRO_REF_LNG = -0.1278
+MERCURY_RETRO_REF_TZ = "Europe/London"
+
+def build_sky_subject(dt):
+    return AstrologicalSubjectFactory.from_birth_data(
+        name="Sky",
+        year=dt.year, month=dt.month, day=dt.day, hour=dt.hour, minute=dt.minute,
+        lng=MERCURY_RETRO_REF_LNG, lat=MERCURY_RETRO_REF_LAT, tz_str=MERCURY_RETRO_REF_TZ,
+        online=False,
+    )
+
+def get_mercury_retrograde_status(reference_date=None):
+    """Uses kerykeion's actual calculated planetary speed/retrograde flag —
+    never guessed or estimated by the AI. If Mercury is retrograde right now,
+    scans backward and forward day-by-day (capped at 90 days each way,
+    comfortably wider than any real Mercury retrograde period, which lasts
+    about 3 weeks) to find this period's real start and end dates. If not
+    retrograde, scans forward up to 200 days to find the next period's
+    start date, since retrogrades occur roughly every 3-4 months."""
+    now = reference_date or datetime.now()
+    today = datetime(now.year, now.month, now.day)
+
+    def check(d):
+        subj = build_sky_subject(d)
+        return subj.mercury.retrograde, subj.mercury.sign
+
+    is_retro, sign = check(today)
+
+    if is_retro:
+        start_date = today
+        for i in range(1, 91):
+            d = today - timedelta(days=i)
+            r, _ = check(d)
+            if not r:
+                break
+            start_date = d
+        end_date = today
+        for i in range(1, 91):
+            d = today + timedelta(days=i)
+            r, _ = check(d)
+            if not r:
+                break
+            end_date = d
+        return {
+            "is_retrograde": True,
+            "sign": sign,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+    else:
+        next_start_date = None
+        next_sign = None
+        for i in range(1, 201):
+            d = today + timedelta(days=i)
+            r, sgn = check(d)
+            if r:
+                next_start_date = d
+                next_sign = sgn
+                break
+        return {
+            "is_retrograde": False,
+            "next_start_date": next_start_date,
+            "next_sign": next_sign,
+        }
+
+def build_mercury_retrograde_html():
+    today = datetime.now()
+    today_str = today.strftime("%d %B %Y")
+    status = get_mercury_retrograde_status(today)
+
+    if status["is_retrograde"]:
+        start_str = status["start_date"].strftime("%d %B %Y")
+        end_str = status["end_date"].strftime("%d %B %Y")
+        sign = status["sign"]
+        prompt = f"""You are an experienced, warm and accessible astrologer writing a short "what's happening right now" explainer about Mercury retrograde for a general audience. Today's date is {today_str}.
+
+Real facts (calculated, not estimated): Mercury is currently retrograde in {sign}. This retrograde period began on {start_str} and will end on {end_str}.
+
+Structure your response using EXACTLY these section headings, each on its own line starting with "## ", with writing directly beneath. No bullet points, no bold, no numbered lists — plain flowing paragraphs:
+## What's Happening Right Now
+## What This Means for You
+## How to Navigate It
+## When It Ends
+
+Guidance:
+- What's Happening Right Now (100-130 words): plainly state that Mercury is retrograde in {sign} right now, when it started, and ground it briefly in what "retrograde" actually means astronomically (an optical illusion where Mercury appears to move backward from Earth's viewpoint) without being overly technical.
+- What This Means for You (150-180 words): what {sign}'s themes mean for the kinds of things that tend to get disrupted during this retrograde — communication, travel, technology, contracts, etc. — colored by {sign}'s specific nature.
+- How to Navigate It (150-180 words): practical, grounded, non-alarmist advice for this specific retrograde in {sign}.
+- When It Ends (80-100 words): state the end date ({end_str}) plainly, and a brief, level-headed note on what to expect as it wraps up.
+
+Avoid clichéd fear-mongering ("everything will go wrong!") — Mercury retrograde is a real astronomical event worth taking seriously, not a horror story. Avoid absolute, deterministic language. Do not mention that this is AI-generated or reference these instructions."""
+    else:
+        next_start_str = status["next_start_date"].strftime("%d %B %Y") if status["next_start_date"] else "unknown"
+        next_sign = status["next_sign"] or "an upcoming sign"
+        prompt = f"""You are an experienced, warm and accessible astrologer writing a short "what's happening right now" explainer about Mercury retrograde for a general audience. Today's date is {today_str}.
+
+Real facts (calculated, not estimated): Mercury is NOT currently retrograde. The next Mercury retrograde period begins on {next_start_str} in {next_sign}.
+
+Structure your response using EXACTLY these section headings, each on its own line starting with "## ", with writing directly beneath. No bullet points, no bold, no numbered lists — plain flowing paragraphs:
+## Current Status
+## What's Coming
+## How to Prepare
+
+Guidance:
+- Current Status (100-130 words): plainly reassure the reader that Mercury is NOT retrograde right now, and briefly ground what "retrograde" actually means astronomically (an optical illusion where Mercury appears to move backward from Earth's viewpoint) without being overly technical.
+- What's Coming (150-180 words): the next retrograde begins {next_start_str} in {next_sign} — what {next_sign}'s themes suggest about the kinds of disruptions to expect (communication, travel, technology, contracts, etc.) once it starts.
+- How to Prepare (120-150 words): practical, grounded, non-alarmist advice for using the time before {next_start_str} to prepare.
+
+Avoid clichéd fear-mongering ("everything will go wrong!") — Mercury retrograde is a real astronomical event worth taking seriously, not a horror story. Avoid absolute, deterministic language. Do not mention that this is AI-generated or reference these instructions."""
+
+    interpretation = call_groq(prompt)
+    html_content = format_sectioned_interpretation(interpretation)
+    meta_line = (
+        f'<p style="text-align:center; font-style:italic; color:#8a6d3b; '
+        f'font-size:13px; letter-spacing:0.5px; margin-bottom:30px;">'
+        f'✦ Updated {today_str} ✦</p>'
+    )
+    return meta_line + html_content
+
+@app.route("/mercury-retrograde-info", methods=["GET"])
+def mercury_retrograde_info():
+    try:
+        html_content = build_mercury_retrograde_html()
+        return jsonify({"interpretation_html": html_content})
+    except Exception as e:
+        logger.exception(e)
+        return jsonify({"error": "Mercury retrograde info failed", "detail": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)

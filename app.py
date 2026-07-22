@@ -1626,6 +1626,18 @@ MERCURY_RETRO_REF_LAT = 51.5074
 MERCURY_RETRO_REF_LNG = -0.1278
 MERCURY_RETRO_REF_TZ = "Europe/London"
 
+# Fixed, correct element per sign — fed to Groq explicitly as fact so it
+# never has to guess (and never again states "the fire sign of Scorpio").
+ZODIAC_ELEMENTS = {
+    "Aries": "fire", "Leo": "fire", "Sagittarius": "fire",
+    "Taurus": "earth", "Virgo": "earth", "Capricorn": "earth",
+    "Gemini": "air", "Libra": "air", "Aquarius": "air",
+    "Cancer": "water", "Scorpio": "water", "Pisces": "water",
+}
+
+def sign_element(sign_name):
+    return ZODIAC_ELEMENTS.get(sign_name, "")
+
 def build_sky_subject(dt):
     return AstrologicalSubjectFactory.from_birth_data(
         name="Sky",
@@ -1697,9 +1709,10 @@ def build_mercury_retrograde_html():
         start_str = status["start_date"].strftime("%d %B %Y")
         end_str = status["end_date"].strftime("%d %B %Y")
         sign = status["sign"]
+        element = sign_element(sign)
         prompt = f"""You are an experienced, warm and accessible astrologer writing a short "what's happening right now" explainer about Mercury retrograde for a general audience. Today's date is {today_str}.
 
-Real facts (calculated, not estimated): Mercury is currently retrograde in {sign}. This retrograde period began on {start_str} and will end on {end_str}.
+Real facts (calculated, not estimated — use the element given here exactly, do not state a different element for this sign): Mercury is currently retrograde in {sign} (a {element} sign). This retrograde period began on {start_str} and will end on {end_str}.
 
 Structure your response using EXACTLY these section headings, each on its own line starting with "## ", with writing directly beneath. No bullet points, no bold, no numbered lists — plain flowing paragraphs:
 ## What's Happening Right Now
@@ -1709,17 +1722,18 @@ Structure your response using EXACTLY these section headings, each on its own li
 
 Guidance:
 - What's Happening Right Now (100-130 words): plainly state that Mercury is retrograde in {sign} right now, when it started, and ground it briefly in what "retrograde" actually means astronomically (an optical illusion where Mercury appears to move backward from Earth's viewpoint) without being overly technical.
-- What This Means for You (150-180 words): what {sign}'s themes mean for the kinds of things that tend to get disrupted during this retrograde — communication, travel, technology, contracts, etc. — colored by {sign}'s specific nature.
+- What This Means for You (150-180 words): what {sign}'s themes mean for the kinds of things that tend to get disrupted during this retrograde — communication, travel, technology, contracts, etc. — colored by {sign}'s specific nature as a {element} sign.
 - How to Navigate It (150-180 words): practical, grounded, non-alarmist advice for this specific retrograde in {sign}.
 - When It Ends (80-100 words): state the end date ({end_str}) plainly, and a brief, level-headed note on what to expect as it wraps up.
 
-Avoid clichéd fear-mongering ("everything will go wrong!") — Mercury retrograde is a real astronomical event worth taking seriously, not a horror story. Avoid absolute, deterministic language. Do not mention that this is AI-generated or reference these instructions."""
+Avoid clichéd fear-mongering ("everything will go wrong!") — Mercury retrograde is a real astronomical event worth taking seriously, not a horror story. Double-check that any element you mention for {sign} matches what was given above. Avoid absolute, deterministic language. Do not mention that this is AI-generated or reference these instructions."""
     else:
         next_start_str = status["next_start_date"].strftime("%d %B %Y") if status["next_start_date"] else "unknown"
         next_sign = status["next_sign"] or "an upcoming sign"
+        next_element = sign_element(next_sign)
         prompt = f"""You are an experienced, warm and accessible astrologer writing a short "what's happening right now" explainer about Mercury retrograde for a general audience. Today's date is {today_str}.
 
-Real facts (calculated, not estimated): Mercury is NOT currently retrograde. The next Mercury retrograde period begins on {next_start_str} in {next_sign}.
+Real facts (calculated, not estimated — use the element given here exactly, do not state a different element for this sign): Mercury is NOT currently retrograde. The next Mercury retrograde period begins on {next_start_str} in {next_sign} (a {next_element} sign).
 
 Structure your response using EXACTLY these section headings, each on its own line starting with "## ", with writing directly beneath. No bullet points, no bold, no numbered lists — plain flowing paragraphs:
 ## Current Status
@@ -1728,10 +1742,10 @@ Structure your response using EXACTLY these section headings, each on its own li
 
 Guidance:
 - Current Status (100-130 words): plainly reassure the reader that Mercury is NOT retrograde right now, and briefly ground what "retrograde" actually means astronomically (an optical illusion where Mercury appears to move backward from Earth's viewpoint) without being overly technical.
-- What's Coming (150-180 words): the next retrograde begins {next_start_str} in {next_sign} — what {next_sign}'s themes suggest about the kinds of disruptions to expect (communication, travel, technology, contracts, etc.) once it starts.
+- What's Coming (150-180 words): the next retrograde begins {next_start_str} in {next_sign} — what {next_sign}'s themes (as a {next_element} sign) suggest about the kinds of disruptions to expect (communication, travel, technology, contracts, etc.) once it starts.
 - How to Prepare (120-150 words): practical, grounded, non-alarmist advice for using the time before {next_start_str} to prepare.
 
-Avoid clichéd fear-mongering ("everything will go wrong!") — Mercury retrograde is a real astronomical event worth taking seriously, not a horror story. Avoid absolute, deterministic language. Do not mention that this is AI-generated or reference these instructions."""
+Avoid clichéd fear-mongering ("everything will go wrong!") — Mercury retrograde is a real astronomical event worth taking seriously, not a horror story. Double-check that any element you mention for {next_sign} matches what was given above. Avoid absolute, deterministic language. Do not mention that this is AI-generated or reference these instructions."""
 
     interpretation = call_groq(prompt)
     html_content = format_sectioned_interpretation(interpretation)
@@ -1806,17 +1820,22 @@ def build_moon_phase_html():
     full_sign = status["next_full_sign"] or "an upcoming sign"
     new_sign = status["next_new_sign"] or "an upcoming sign"
 
+    today_moon_element = sign_element(status["today_moon_sign"])
+    today_sun_element = sign_element(status["today_sun_sign"])
+    full_element = sign_element(full_sign)
+    new_element = sign_element(new_sign)
+
     today_line = (
-        f'Today ({today_str}) is the Full Moon itself, with the Moon in {status["today_moon_sign"]}.'
+        f'Today ({today_str}) is the Full Moon itself, with the Moon in {status["today_moon_sign"]} (a {today_moon_element} sign).'
         if status["is_full_moon_today"] else
-        f'Today ({today_str}) is the New Moon itself, with the Moon in {status["today_moon_sign"]}.'
+        f'Today ({today_str}) is the New Moon itself, with the Moon in {status["today_moon_sign"]} (a {today_moon_element} sign).'
         if status["is_new_moon_today"] else
-        f'Today ({today_str}), the Moon is in its {status["today_phase"]} phase, currently in {status["today_moon_sign"]}, while the Sun is in {status["today_sun_sign"]}.'
+        f'Today ({today_str}), the Moon is in its {status["today_phase"]} phase, currently in {status["today_moon_sign"]} (a {today_moon_element} sign), while the Sun is in {status["today_sun_sign"]} (a {today_sun_element} sign).'
     )
 
     prompt = f"""You are an experienced, warm and accessible astrologer writing a short "what's happening right now" explainer about the Moon's current phase, for a general audience. Today's date is {today_str}.
 
-Real facts (calculated, not estimated): {today_line} The next Full Moon falls on {full_str} in {full_sign}. The next New Moon falls on {new_str} in {new_sign}.
+Real facts (calculated, not estimated — use the elements given here exactly, do not state a different element for any sign): {today_line} The next Full Moon falls on {full_str} in {full_sign} (a {full_element} sign). The next New Moon falls on {new_str} in {new_sign} (a {new_element} sign).
 
 Structure your response using EXACTLY these section headings, each on its own line starting with "## ", with writing directly beneath. No bullet points, no bold, no numbered lists — plain flowing paragraphs:
 ## Where the Moon Is Right Now
@@ -1825,12 +1844,12 @@ Structure your response using EXACTLY these section headings, each on its own li
 ## How to Work With This Energy
 
 Guidance:
-- Where the Moon Is Right Now (100-130 words): plainly ground the reader in today's actual moon phase and sign, and briefly what that phase generally represents in the lunar cycle (without being overly technical).
-- The Next Full Moon (150-180 words): the Full Moon on {full_str} in {full_sign} — what {full_sign}'s themes suggest about what tends to culminate, come to light, or reach a peak under this specific Full Moon.
-- The Next New Moon (150-180 words): the New Moon on {new_str} in {new_sign} — what {new_sign}'s themes suggest about new beginnings or intentions that resonate under this specific New Moon.
+- Where the Moon Is Right Now (100-130 words): plainly ground the reader in today's actual moon phase and sign (and its element, {today_moon_element}), and briefly what that phase generally represents in the lunar cycle (without being overly technical).
+- The Next Full Moon (150-180 words): the Full Moon on {full_str} in {full_sign} — what {full_sign}'s themes (as a {full_element} sign) suggest about what tends to culminate, come to light, or reach a peak under this specific Full Moon.
+- The Next New Moon (150-180 words): the New Moon on {new_str} in {new_sign} — what {new_sign}'s themes (as a {new_element} sign) suggest about new beginnings or intentions that resonate under this specific New Moon.
 - How to Work With This Energy (120-150 words): practical, grounded suggestions for how to use the time between now and these two lunar moments.
 
-Avoid vague, generic "manifest your dreams" language not tied to the actual signs involved — stay specific to {full_sign} and {new_sign}'s real themes. Avoid absolute, deterministic language. Do not mention that this is AI-generated or reference these instructions."""
+Avoid vague, generic "manifest your dreams" language not tied to the actual signs involved — stay specific to {full_sign} and {new_sign}'s real themes. Double-check that any element you mention for a sign matches what was given above. Avoid absolute, deterministic language. Do not mention that this is AI-generated or reference these instructions."""
 
     interpretation = call_groq(prompt)
     html_content = format_sectioned_interpretation(interpretation)

@@ -1916,6 +1916,11 @@ def build_tarot_quiz_certificate(answers, person_name=None):
         for i, (q, a) in enumerate(zip(QUIZ_QUESTIONS, answers))
     )
     name_line = f"The reader's name is {person_name}. " if person_name else ""
+    opening_instruction = (
+        f'Begin the writeup with "Dear {person_name}," on its own opening line, then continue into the writeup.'
+        if person_name else
+        "Begin the writeup directly with the first sentence — no salutation, since no name was given."
+    )
 
     prompt = f"""You are a warm, perceptive tarot reader matching someone to a tarot card based on a short personality quiz, for the Cat & the City Tarot deck. {name_line}Do not mention that this is AI-generated or reference these instructions.
 
@@ -1928,7 +1933,7 @@ Their quiz answers:
 Respond in EXACTLY this format, nothing else:
 CARD: <the exact card name from the list above>
 ---
-<a warm, personalized 120-160 word "certificate" style writeup, written directly to the reader in second person ("you"), explaining why this card reflects them based on their specific answers. Avoid generic horoscope language — reference the actual pattern in their answers. End on an uplifting, affirming note.>"""
+<a warm, personalized 120-160 word "certificate" style writeup, written directly to the reader in second person ("you"), explaining why this card reflects them based on their specific answers. {opening_instruction} Avoid generic horoscope language — reference the actual pattern in their answers. End on an uplifting, affirming note.>"""
 
     raw = call_groq(prompt)
 

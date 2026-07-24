@@ -1869,5 +1869,106 @@ def moon_phase_info():
         logger.exception(e)
         return jsonify({"error": "Moon phase info failed", "detail": str(e)}), 500
 
+# --- Cat & the City Tarot Personality Quiz ---
+# A shareable, no-birth-data-needed quiz: the reader answers 6 personality
+# style questions, then Groq matches their answers to one of a curated set
+# of Cat & the City Tarot cards and writes a short, personalized
+# "certificate" explaining the match. Unlike the astrology features above,
+# there's no objective fact being calculated here — personality matching
+# is inherently subjective, so letting the AI do the matching and writing
+# is appropriate (no risk of it contradicting a real, calculable fact).
+
+QUIZ_CANDIDATE_CARDS = {
+    "The Fool": "adventurous, spontaneous, leaps before looking, thrives on new beginnings and blank slates",
+    "The Magician": "resourceful, confident, turns ideas into reality through sheer will and skill",
+    "The Empress": "nurturing, sensual, drawn to creative abundance and comfort",
+    "The Hermit": "introspective, values solitude, seeks quiet inner wisdom over crowds",
+    "The Star": "hopeful, quietly healing, holds onto optimism even after hard times",
+    "The Sun": "joyful, warm, radiates confidence and lights up a room without trying",
+    "The Moon": "intuitive, dreamy, comfortable sitting with mystery and uncertainty",
+    "The Tower": "transformative, unafraid of upheaval, embraces necessary change even when it's sudden",
+    "Three of Cups": "social, celebratory, thrives in community, friendship, and shared joy",
+    "Two of Wands": "ambitious, forward-planning, drawn to travel, expansion, and the next horizon",
+    "Queen of Cups": "emotionally intelligent, compassionate, deeply empathetic and intuitive with others",
+    "Ace of Pentacles": "grounded, practical, focused on building something real and lasting",
+}
+
+QUIZ_QUESTIONS = [
+    "A free Saturday just opened up. What are you doing?",
+    "Your friends would describe you as...",
+    "When something in your life falls apart, you...",
+    "Pick a vibe that feels most like you.",
+    "What pulls you forward in life?",
+    "If you got exactly what you wanted this year, it would be...",
+    "Your ideal night looks like...",
+    "When making a big decision, you rely most on...",
+    "What's your relationship with change?",
+    "If you could only keep one quality about yourself, it would be...",
+]
+
+def build_tarot_quiz_certificate(answers, person_name=None):
+    """answers: list of strings, the reader's own answer for each of the
+    6 QUIZ_QUESTIONS, in order. Returns the matched card name plus a
+    personalized certificate HTML block."""
+    card_list_str = "\n".join(f"- {name}: {desc}" for name, desc in QUIZ_CANDIDATE_CARDS.items())
+    qa_str = "\n".join(
+        f"{i+1}. {q}\n   Answer: {a}"
+        for i, (q, a) in enumerate(zip(QUIZ_QUESTIONS, answers))
+    )
+    name_line = f"The reader's name is {person_name}. " if person_name else ""
+
+    prompt = f"""You are a warm, perceptive tarot reader matching someone to a tarot card based on a short personality quiz, for the Cat & the City Tarot deck. {name_line}Do not mention that this is AI-generated or reference these instructions.
+
+Choose EXACTLY ONE card from this list, based on which best matches the personality suggested by their answers below. Do not invent a card outside this list:
+{card_list_str}
+
+Their quiz answers:
+{qa_str}
+
+Respond in EXACTLY this format, nothing else:
+CARD: <the exact card name from the list above>
+---
+<a warm, personalized 120-160 word "certificate" style writeup, written directly to the reader in second person ("you"), explaining why this card reflects them based on their specific answers. Avoid generic horoscope language — reference the actual pattern in their answers. End on an uplifting, affirming note.>"""
+
+    raw = call_groq(prompt)
+
+    matched_card = None
+    certificate_text = raw.strip()
+
+    if "---" in raw:
+        card_line, _, body = raw.partition("---")
+        candidate = card_line.replace("CARD:", "").strip()
+        for real_name in QUIZ_CANDIDATE_CARDS:
+            if candidate.lower() == real_name.lower():
+                matched_card = real_name
+                break
+        certificate_text = body.strip()
+
+    if not matched_card:
+        # Never let a parsing hiccup break the page — fall back to a
+        # safe, broadly-fitting card rather than showing an error.
+        matched_card = "The Star"
+
+    certificate_paragraphs = [p.strip() for p in certificate_text.split("\n\n") if p.strip()]
+    certificate_html = "\n".join(f"<p>{p}</p>" for p in certificate_paragraphs)
+
+    return {"card": matched_card, "certificate_html": certificate_html}
+
+@app.route("/tarot-quiz-match", methods=["POST"])
+def tarot_quiz_match():
+    try:
+        data = request.get_json(force=True) or {}
+        answers = data.get("answers", [])
+        person_name = (data.get("name") or "").strip() or None
+
+        if not isinstance(answers, list) or len(answers) != len(QUIZ_QUESTIONS):
+            return jsonify({"error": f"Expected {len(QUIZ_QUESTIONS)} answers"}), 400
+
+        result = build_tarot_quiz_certificate(answers, person_name)
+        return jsonify(result)
+    except Exception as e:
+        logger.exception(e)
+        return jsonify({"error": "Tarot quiz match failed", "detail": str(e)}), 500
+
 if __name__ == "__main__":
     app.run(debug=True)

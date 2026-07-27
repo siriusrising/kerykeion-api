@@ -9,7 +9,7 @@ import requests
 import weasyprint
 from datetime import datetime, timedelta
 from io import BytesIO
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, request, Response, jsonify, send_file
 from kerykeion import AstrologicalSubjectFactory
@@ -711,6 +711,35 @@ def interpret_pdf():
         logger.exception(e)
         return jsonify({"error": "PDF generation failed", "detail": str(e)}), 500
 
+# Tarot of Oraclyn renames the four traditional court cards. Fed to the AI
+# as a stated fact (not left for it to infer/guess) so it can accurately
+# reference the traditional Rider-Waite-style equivalent when it's helpful,
+# without ever getting the correspondence wrong.
+COURT_CARD_TRADITIONAL_NAMES = {
+    "Messenger": "Page",
+    "Warrior": "Knight",
+    "Matriarch": "Queen",
+    "Visionary": "King",
+}
+
+def traditional_court_card_note(title):
+    """Returns a short factual note if this card is one of Tarot of
+    Oraclyn's renamed court cards, mapping it to its traditional name
+    (e.g. "Messenger of Pentacles" -> "Page of Pentacles"). Returns ""
+    for any card that isn't a renamed court card."""
+    if not title:
+        return ""
+    first_word = title.strip().split(" ")[0]
+    traditional = COURT_CARD_TRADITIONAL_NAMES.get(first_word)
+    if not traditional:
+        return ""
+    traditional_title = title.replace(first_word, traditional, 1)
+    return (
+        f' In traditional tarot systems such as Rider-Waite, this card corresponds '
+        f'to the {traditional_title} — mention this correspondence naturally if it fits, '
+        f'without dwelling on it.'
+    )
+
 @app.route("/tarot-reading", methods=["POST"])
 def tarot_reading():
     try:
@@ -761,7 +790,7 @@ def tarot_reading():
         )
         prompt = f"""You are a warm, wise reader working with an original tarot deck called "The Tarot of Oraclyn" — a deck that reimagines traditional tarot through a feminine lens, replacing judgment and fear-based imagery with compassion and belonging. Each card features a woman and an animal companion (a familiar) who reflects her inner state and deepens the card's meaning. This is a tarot of belonging, not judgment: it doesn't predict fate, it invites reflection. It heals as it reads.
 
-The card drawn is "{card_title}".
+The card drawn is "{card_title}".{traditional_court_card_note(card_title)}
 {grounding}{animal_grounding}{orientation_note}
 
 The person asked: "{question}"
@@ -979,7 +1008,7 @@ def tarot_card_of_the_day():
                 animal_block += f' What the {animal} teaches: "{animal_meaning}"'
         prompt = f"""You are a warm, wise reader working with an original tarot deck called "Tarot of Oraclyn" — a deck that reimagines traditional tarot through a compassionate, non-hierarchical lens, replacing judgment and fear-based imagery with warmth and belonging. Each card features a woman and an animal companion (a familiar) who reflects her inner state and deepens the card's meaning.
 
-Today's card is "{title}".
+Today's card is "{title}".{traditional_court_card_note(title)}
 Upright meaning: "{upright}"
 Reversed meaning: "{reversed_meaning}"{animal_block}
 
@@ -1974,6 +2003,174 @@ def tarot_quiz_match():
     except Exception as e:
         logger.exception(e)
         return jsonify({"error": "Tarot quiz match failed", "detail": str(e)}), 500
+
+# --- Birth Chart Poster (shareable image) ---
+# Reuses build_subject (real kerykeion calculation, same as the birth chart
+# report above) and the same ZODIAC_SYMBOLS / SIGN_NAMES / get_sign_code
+# already defined for the report cards, so the Sun/Moon/Rising shown here
+# always match the full report exactly. The only new work is rendering it
+# as a downloadable 1080x1920 PNG image instead of an HTML report, using
+# Pillow directly (weasyprint is HTML/CSS -> PDF only, not PNG).
+
+POSTER_WIDTH = 1080
+POSTER_HEIGHT = 1920
+POSTER_BG = (13, 27, 42)        # #0d1b2a navy
+POSTER_GOLD = (201, 169, 110)   # #c9a96e
+POSTER_CREAM = (240, 236, 224)
+
+FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+
+def _poster_font(filename, size):
+    return ImageFont.truetype(os.path.join(FONT_DIR, filename), size)
+
+def _centered_text(draw, text, font, y, fill):
+    bbox = draw.textbbox((0, 0), text, font=font)
+    x = (POSTER_WIDTH - (bbox[2] - bbox[0])) / 2
+    draw.text((x, y), text, font=font, fill=fill)
+
+def _wrap_lines(draw, text, font, max_width):
+    words = text.split()
+    lines, current = [], ""
+    for word in words:
+        test = f"{current} {word}".strip()
+        bbox = draw.textbbox((0, 0), test, font=font)
+        if bbox[2] - bbox[0] <= max_width:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+def build_birth_chart_poster_snapshot(name, sun_name, moon_name, asc_name):
+    prompt = f"""You are a warm, insightful astrologer writing a very short "cosmic snapshot" for {name}, to appear on a personalized shareable graphic.
+
+Their placements: Sun in {sun_name}, Moon in {moon_name}, Rising in {asc_name}.
+
+Write exactly 2-3 sentences (40-60 words total) synthesizing what this specific combination suggests about them — warm, affirming, and specific to these three signs together, not generic filler. No bullet points, no headings. Do not mention that this is AI-generated or reference these instructions."""
+    return call_groq(prompt).strip()
+
+def build_birth_chart_poster(name, year, month, day, hour, minute, city, country):
+    subject = build_subject(name, year, month, day, hour, minute, city, country)
+
+    asc_sign_raw = subject.first_house.sign
+    sun_code  = get_sign_code(subject.sun.sign)
+    moon_code = get_sign_code(subject.moon.sign)
+    asc_code  = get_sign_code(asc_sign_raw)
+
+    sun_symbol,  _ = ZODIAC_SYMBOLS.get(sun_code,  ("☉", "#FFA500"))
+    moon_symbol, _ = ZODIAC_SYMBOLS.get(moon_code, ("☽", "#87CEEB"))
+    asc_symbol,  _ = ZODIAC_SYMBOLS.get(asc_code,  ("↑", "#9B59B6"))
+
+    sun_name  = SIGN_NAMES.get(sun_code,  subject.sun.sign)
+    moon_name = SIGN_NAMES.get(moon_code, subject.moon.sign)
+    asc_name  = SIGN_NAMES.get(asc_code,  asc_sign_raw)
+
+    snapshot_text = build_birth_chart_poster_snapshot(name, sun_name, moon_name, asc_name)
+
+    img = Image.new("RGB", (POSTER_WIDTH, POSTER_HEIGHT), POSTER_BG)
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # Starfield background
+    for _ in range(200):
+        x = random.uniform(0, POSTER_WIDTH)
+        y = random.uniform(0, POSTER_HEIGHT)
+        r = random.uniform(0.8, 2.6)
+        op = random.randint(90, 230)
+        draw.ellipse([x - r, y - r, x + r, y + r], fill=(255, 255, 255, op))
+
+    logo_font   = _poster_font("LiberationSerif-Bold.ttf", 32)
+    name_font   = _poster_font("LiberationSerif-Italic.ttf", 56)
+    symbol_font = _poster_font("DejaVuSans.ttf", 84)
+    sign_font   = _poster_font("LiberationSerif-Bold.ttf", 30)
+    label_font  = _poster_font("LiberationSerif-Regular.ttf", 20)
+    body_font   = _poster_font("LiberationSerif-Regular.ttf", 34)
+    cta_font    = _poster_font("LiberationSerif-Italic.ttf", 26)
+
+    _centered_text(draw, "O R A C L Y N", logo_font, 70, POSTER_GOLD)
+
+    display_name = name if name and name.strip().lower() not in ("your", "") else None
+    name_text = f"{display_name}’s Cosmic Blueprint" if display_name else "Your Cosmic Blueprint"
+    fitted_font = name_font
+    bbox = draw.textbbox((0, 0), name_text, font=fitted_font)
+    while bbox[2] - bbox[0] > POSTER_WIDTH - 120 and fitted_font.size > 28:
+        fitted_font = _poster_font("LiberationSerif-Italic.ttf", fitted_font.size - 4)
+        bbox = draw.textbbox((0, 0), name_text, font=fitted_font)
+    _centered_text(draw, name_text, fitted_font, 170, POSTER_CREAM)
+
+    # Big three badges: Sun, Moon, Rising
+    badges = [
+        (sun_symbol,  "Sun",    sun_name,  "Identity"),
+        (moon_symbol, "Moon",   moon_name, "Emotion"),
+        (asc_symbol,  "Rising", asc_name,  "First Impression"),
+    ]
+    badge_radius = 130
+    badge_y_center = 560
+    spacing = 320
+    start_x = POSTER_WIDTH / 2 - spacing
+
+    for i, (symbol, planet_label, sign_name, trait_label) in enumerate(badges):
+        cx = start_x + i * spacing
+        draw.ellipse(
+            [cx - badge_radius, badge_y_center - badge_radius,
+             cx + badge_radius, badge_y_center + badge_radius],
+            outline=POSTER_GOLD, width=3
+        )
+        pbbox = draw.textbbox((0, 0), planet_label.upper(), font=label_font)
+        draw.text((cx - (pbbox[2]-pbbox[0])/2, badge_y_center - badge_radius - 40),
+                   planet_label.upper(), font=label_font, fill=POSTER_GOLD)
+
+        sbbox = draw.textbbox((0, 0), symbol, font=symbol_font)
+        draw.text((cx - (sbbox[2]-sbbox[0])/2, badge_y_center - 95),
+                   symbol, font=symbol_font, fill=POSTER_GOLD)
+
+        nbbox = draw.textbbox((0, 0), sign_name, font=sign_font)
+        draw.text((cx - (nbbox[2]-nbbox[0])/2, badge_y_center + 20),
+                   sign_name, font=sign_font, fill=POSTER_CREAM)
+
+        lbbox = draw.textbbox((0, 0), trait_label.upper(), font=label_font)
+        draw.text((cx - (lbbox[2]-lbbox[0])/2, badge_y_center + 60),
+                   trait_label.upper(), font=label_font, fill=POSTER_GOLD)
+
+    # Cosmic snapshot paragraph
+    snapshot_lines = _wrap_lines(draw, snapshot_text, body_font, POSTER_WIDTH - 160)
+    y = 880
+    line_height = 46
+    for line in snapshot_lines:
+        _centered_text(draw, line, body_font, y, POSTER_CREAM)
+        y += line_height
+
+    # Divider + closing CTA
+    divider_y = y + 60
+    draw.line(
+        [(POSTER_WIDTH/2 - 100, divider_y), (POSTER_WIDTH/2 + 100, divider_y)],
+        fill=POSTER_GOLD, width=2
+    )
+    _centered_text(draw, "Discover your full birth chart free at", cta_font, divider_y + 40, POSTER_CREAM)
+    _centered_text(draw, "oraclyn.fr", cta_font, divider_y + 80, POSTER_GOLD)
+
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
+
+@app.route("/birth-chart-poster")
+def birth_chart_poster():
+    try:
+        name, year, month, day, hour, minute, city, country = parse_common_args(request.args)
+        buffer = build_birth_chart_poster(name, year, month, day, hour, minute, city, country)
+        return Response(
+            buffer.getvalue(),
+            mimetype="image/png",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_filename(name)}-cosmic-blueprint.png"'
+            }
+        )
+    except Exception as e:
+        logger.exception(e)
+        return jsonify({"error": "Poster generation failed", "detail": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)

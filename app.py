@@ -1019,17 +1019,12 @@ If what the owner described sounds like it could be a physical or health issue
 (pain, appetite, mobility, etc.), don't diagnose it or explain it away spiritually —
 instead have the reading gently note that this feeling is worth mentioning to a vet.
 Never contradict or discourage veterinary care."""
-
-    try:
-        response = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=350,
-        )
-        reading = response.choices[0].message.content
-        return jsonify({"reading": reading}), 200
+try:
+        reading = call_groq(prompt)
+        return jsonify({"reading": reading.strip()}), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.exception(e)
+        return jsonify({"error": "Pet tarot reading failed", "detail": str(e)}), 500
 
 
         

@@ -989,6 +989,50 @@ Guidance:
     except Exception as e:
         logger.exception(e)
         return jsonify({"error": "Compatibility reading failed", "detail": str(e)}), 500
+@app.route('/pet-tarot', methods=['POST'])
+def pet_tarot():
+    data = request.get_json()
+    pet_name = data.get('petName', 'your pet')
+    species = data.get('species', 'pet')
+    note = data.get('note', '')
+    card_name = data.get('cardName')
+    animal = data.get('animal')
+    animal_meaning = data.get('animalMeaning')
+
+    prompt = f"""You are a warm, intuitive "pet tarot" reader — a real practice where a
+drawn card is interpreted for what a PET might be feeling or experiencing, not the
+owner's fortune.
+
+Card drawn: {card_name}
+This card's animal companion: {animal}
+This card's animal-framed meaning: {animal_meaning}
+
+Pet: {pet_name}, a {species}
+What the owner has noticed lately: {note if note else "nothing specific mentioned"}
+
+Write a 4-5 sentence reading FROM {pet_name}'s PERSPECTIVE. Ground it in the card's
+animal meaning above, but weave in what the owner described — connect the card's
+theme to that specific behavior in a way that offers a plausible emotional or
+behavioral explanation. Be warm and specific, not generic.
+
+If what the owner described sounds like it could be a physical or health issue
+(pain, appetite, mobility, etc.), don't diagnose it or explain it away spiritually —
+instead have the reading gently note that this feeling is worth mentioning to a vet.
+Never contradict or discourage veterinary care."""
+
+    try:
+        response = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=350,
+        )
+        reading = response.choices[0].message.content
+        return jsonify({"reading": reading}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+        
 
 @app.route("/tarot-card-of-the-day", methods=["POST"])
 def tarot_card_of_the_day():

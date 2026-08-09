@@ -1019,7 +1019,7 @@ If what the owner described sounds like it could be a physical or health issue
 (pain, appetite, mobility, etc.), don't diagnose it or explain it away spiritually —
 instead have the reading gently note that this feeling is worth mentioning to a vet.
 Never contradict or discourage veterinary care."""
-try:
+    try:
         reading = call_groq(prompt)
         return jsonify({"reading": reading.strip()}), 200
     except Exception as e:
